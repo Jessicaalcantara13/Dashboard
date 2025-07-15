@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Estratégico de Proyectos (v.Estable)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns/locale/es"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7fa; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1600px; margin: 0 auto; }
+        h1, h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 40px; }
+        .kpi-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .kpi-card { background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); text-align: center; }
+        .kpi-card .value { font-size: 2.2em; font-weight: bold; color: #3498db; margin-bottom: 5px; }
+        .kpi-card .label { font-size: 0.9em; color: #7f8c8d; }
+        .filters-container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+        .filters-container .filter-group { display: flex; flex-direction: column; }
+        .filters-container label { margin-bottom: 5px; font-weight: bold; color: #555; font-size: 14px;}
+        .filters-container select { padding: 10px; font-size: 14px; border-radius: 5px; border: 1px solid #ccc; width: 220px; }
+        .filters-container button { padding: 10px 20px; font-size: 14px; border-radius: 5px; border: none; background-color: #e74c3c; color: white; cursor: pointer; height: 39px; }
+        .charts-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .chart-wrapper { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .main-charts .chart-wrapper { height: 400px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; word-break: break-word; }
+        th { background-color: #3498db; color: white; }
+        tbody tr:hover { background-color: #eaf5ff; }
+        .detail-header { display: flex; justify-content: space-between; align-items: center; }
+        #exportBtn { padding: 10px 20px; font-size: 14px; border-radius: 5px; border: none; background-color: #27ae60; color: white; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Dashboard Estratégico de Proyectos</h1>
+
+    <!-- 1. FILTROS -->
+    <div class="filters-container">
+        <div class="filter-group"><label for="filterArea">Filtrar por Área:</label><select id="filterArea"></select></div>
+        <div class="filter-group"><label for="filterProyecto">Filtrar por Proyecto:</label><select id="filterProyecto"></select></div>
+        <div class="filter-group"><label for="filterProveedor">Filtrar por Proveedor:</label><select id="filterProveedor"></select></div>
+        <div class="filter-group"><label for="filterMes">Filtrar por Mes:</label><select id="filterMes"></select></div>
+        <button id="clearFilters">Limpiar Filtros</button>
+    </div>
+
+    <!-- 2. TARJETAS (KPIs) -->
+    <div class="kpi-container">
+        <div class="kpi-card"><div id="totalMonto" class="value">$0</div><div class="label">Monto Total Facturado</div></div>
+        <div class="kpi-card"><div id="totalConceptos" class="value">0</div><div class="label">Conceptos Facturables</div></div>
+        <div class="kpi-card"><div id="costoPromedio" class="value">$0</div><div class="label">Costo Promedio / Concepto</div></div>
+        <div class="kpi-card"><div id="proveedorPrincipal" class="value">-</div><div class="label">Proveedor Principal (por Monto)</div></div>
+    </div>
+    
+    <!-- 3. GRÁFICAS PRINCIPALES -->
+    <div class="charts-container main-charts">
+        <div class="chart-wrapper"><h2>Facturación Mensual</h2><canvas id="timelineChart"></canvas></div>
+        <div class="chart-wrapper"><h2>Distribución por Proveedor</h2><canvas id="proveedorChart"></canvas></div>
+    </div>
+    
+    <!-- 4. CRONOGRAMA -->
+    <div class="chart-wrapper">
+        <h2>Cronograma de Duración de Proyectos</h2>
+        <div id="gantt-chart-parent" style="position: relative; height:700px;">
+            <canvas id="ganttChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- 5. TABLA DE DETALLE -->
+    <div class="detail-header">
+        <h2>Detalle Completo de Conceptos</h2>
+        <button id="exportBtn">Exportar a CSV</button>
+    </div>
+    <div style="overflow-x:auto;">
+        <table id="detailTable">
+            <thead>
+                <tr><th>Área</th><th>Proyecto Principal</th><th>Rubro Específico</th><th>Concepto Facturable</th><th>Fecha Factura</th><th>Proveedor</th><th>Monto (sin IVA)</th></tr>
+            </thead>
+            <tbody id="detailTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// --- DATA SOURCES ---
+const originalData = [
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "7. Comunicación de resultados y mejores prácticas a toda la organización ", "fecha": "10/10/24", "monto": 145242, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:350" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "11. Identificación de áreas de mejora durante los simulacros ", "fecha": "17/09/24", "monto": 175600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:822" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)", "concepto": "1. Sesión introductoria sobre los principios y beneficios del SGC ", "fecha": "08/08/24", "monto": 175600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:265" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "5. Monitorear y evaluar la eficacia de las acciones implementadas ", "fecha": "03/10/24", "monto": 193656, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:339" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "6. Evaluación de la reducción de quejas similares ", "fecha": "10/10/24", "monto": 193656, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:349" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "1. Revisión de requisitos de auditoría de los proveedores ", "fecha": "08/08/24", "monto": 193762, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:633" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "9. Evaluación del personal capacitado ", "fecha": "11/09/24", "monto": 193762, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:794" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "11. Definición de objetivos y metas de mejora ", "fecha": "17/09/24", "monto": 193762, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:823" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "14. Revisión periódica de resultados ", "fecha": "30/09/24", "monto": 193762, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:907" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "10. Identificación de oportunidades de mejora ", "fecha": "12/09/24", "monto": 193762, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:167" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "9. Revisión de datos históricos de desempeño ", "fecha": "11/09/24", "monto": 193800, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:793" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)", "concepto": "2. Explicación de las normas y estándares relevantes ", "fecha": "12/08/24", "monto": 193848, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:267" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)", "concepto": "4. Taller sobre liderazgo y compromiso en el SGC ", "fecha": "20/08/24", "monto": 193848, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:285" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Introducción a los OKRs y Sensibilización", "concepto": "Preparación de  un foro de discusión donde la alta dirección possa plantear dudas, inquietudes y discutir cómo los OKRs podrían aplicarse en el contexto de Ryse Medica.", "fecha": "30/09/24", "monto": 197000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:367" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "14. Evaluación continua de procedimientos y documentación ", "fecha": "30/09/24", "monto": 200100, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:906" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Propuesta de Implementación Piloto", "concepto": "Identificación y selección de áreas o departamentos clave donde se pueda implementar el piloto de OKRs.", "fecha": "30/10/24", "monto": 202000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:430" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "12. Ajuste de procedimientos y documentación según los resultados ", "fecha": "19/09/24", "monto": 210500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:836" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "10. Identificación de áreas críticas de mejora ", "fecha": "12/09/24", "monto": 214000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:802" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "15. Implementación de mejoras continuas basadas en auditorías pasadas ", "fecha": "03/10/24", "monto": 220200, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:931" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)", "concepto": "5. Desarrollo de una matriz de responsabilidades por área responsable", "fecha": "20/08/24", "monto": 234000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:286" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "3. Elaboración de planes de acción correctiva (acciones inmediatas) ", "fecha": "25/09/24", "monto": 242015, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:326" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "4. Desarrollo de planes de acción preventiva (acciones a largo plazo) ", "fecha": "30/09/24", "monto": 242015, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:333" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "1. Definición de estándares de calidad ", "fecha": "08/08/24", "monto": 242169, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:634" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "4. Redacción de políticas de calidad que definan los estándares esperados ", "fecha": "20/08/24", "monto": 242169, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:694" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "6. Creación de guías y manuales de uso que faciliten la comprensión y aplicación de los estándares ", "fecha": "27/08/24", "monto": 242169, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:717" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "13. Seguimiento de indicadores de desempenho ", "fecha": "25/09/24", "monto": 242169, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:853" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "1. Identificar y definir los KPIs que sejam relevantes para los objetivos estratégicos y operativos de la empresa ", "fecha": "08/08/24", "monto": 242169, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:137" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "5. Establecimiento de metodologías y procedimientos para la recolección de datos ", "fecha": "20/08/24", "monto": 242169, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:153" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "8. Evaluar la efectividad de los KPIs y realizar ajustes necesarios para asegurar su relevancia y eficacia ", "fecha": "02/09/24", "monto": 242169, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:159" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "9. Análisis de tendencias y patrones en los datos de KPIs ", "fecha": "11/09/24", "monto": 242169, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:165" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "2. Evaluación de la situación actual de la empresa en términos de cumplimiento ", "fecha": "12/08/24", "monto": 242191, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:640" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "5. Documentación de políticas de calidad ", "fecha": "20/08/24", "monto": 242191, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:692" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "7. Desarrollo de un programa de capacitación específico ", "fecha": "29/08/24", "monto": 242191, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:729" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "8. Realización de sesiones de formación ", "fecha": "02/09/24", "monto": 242191, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:765" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Manejo de Quejas", "concepto": "2. Revisión formulario estándar para el registro de quejas que asegure que toda la información relevante sea capturada de manera uniforme", "fecha": "15/08/24", "monto": 248710, "proveedor": "GOLD REPUBLIC CREATIVE", "factura": "F:415" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Presentación de Resultados y Recomendaciones Finales", "concepto": "Presentación ejecutiva para la alta dirección, resumiendo los hallazgos clave del piloto y las recomendaciones para la adopción completa de OKRs.", "fecha": "03/12/24", "monto": 254000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:526" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "12. Desarrollo de estrategias y tácticas de mejora ", "fecha": "19/09/24", "monto": 255400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:837" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)", "concepto": "3. Presentación de casos de éxito y mejores prácticas ", "fecha": "15/08/24", "monto": 256700, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:275" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Introducción a los OKRs y Sensibilización", "concepto": "Presentación de casos de estudio de empresas que han implementado OKRs, destacando los beneficios alcanzados en términos de alineación estratégica, enfoque y medición de resultados.", "fecha": "23/09/24", "monto": 258000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:342" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "7. Revisión interna con los responsables de las áreas de los documentos para asegurar la precisión y completitud ", "fecha": "02/09/24", "monto": 278900, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:766" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "2. Evaluación de Necesidades para el desarrollo del sistema de gestión de calidad ", "fecha": "12/08/24", "monto": 290617, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:641" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "8. Auditoría interna de procesos y sistemas ", "fecha": "02/09/24", "monto": 290617, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:767" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "2. Definición de KPIs específicos, medibles, alcanzables, relevantes y con límite de tiempo (SMART) ", "fecha": "12/08/24", "monto": 290617, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:139" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "7. Monitorear los KPIs regularmente y generar reportes periódicos para la alta dirección ", "fecha": "02/09/24", "monto": 290617, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:160" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "3. Desarrollo de un plan de acción para la preparación de auditorías ", "fecha": "15/08/24", "monto": 290621, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:660" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "6. Preparación de registros y evidencias necesarias para las auditorías ", "fecha": "27/08/24", "monto": 290621, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:716" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "10. Planificación y ejecución de simulacros de auditoría ", "fecha": "12/09/24", "monto": 290621, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:803" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "1. Evaluar y analizar cada queja para identificar causas raíz y tendencias ", "fecha": "12/09/24", "monto": 290671, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:307" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Propuesta de Implementación Piloto", "concepto": "Capacitación a los equipos seleccionados en la metodología OKR, asegurando que comprendan cómo establecer, seguir y evaluar sus OKRs.", "fecha": "25/11/24", "monto": 304000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:484" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Presentación de Resultados y Recomendaciones Finales", "concepto": "Preparación de un informe detallado sobre los resultados del piloto, incluyendo análisis de desempeño, logros, desafíos, y feedback de los participantes.", "fecha": "03/12/24", "monto": 305000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:525" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Evaluación de la Aplicabilidad de OKRs en Ryse Medica", "concepto": "Evaluación de la viabilidad de implementar OKRs en Ryse Medica, incluyendo un análisis de los recursos necesarios, cambios culturales, y herramientas tecnológicas requeridas.", "fecha": "22/10/24", "monto": 307000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:405" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Introducción a los OKRs y Sensibilización", "concepto": "Realización de una sesión de presentación sobre qué son los OKRs, su historia, principios básicos", "fecha": "17/09/24", "monto": 312000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:337" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "13. Monitoreo periódico de cumplimiento ", "fecha": "25/09/24", "monto": 320000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:852" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Monitoreo de Quejas", "concepto": "2. Desarrollo de Planes de Acción Correctiva y Preventiva (CAPA) ", "fecha": "19/09/24", "monto": 339007, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:324" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "3. Planificación inicial y diseño de los documentos necesarios para definir los estándares de calidad ", "fecha": "15/08/24", "monto": 339065, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:661" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Procesos de optimación del SGC", "concepto": "5. Desarrollo de procedimientos detallados para asegurar la implementación efectiva de las políticas de calidad ", "fecha": "20/08/24", "monto": 339065, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:693" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "3. Selección de herramientas y software para el monitoreo de KPIs ", "fecha": "15/08/24", "monto": 339065, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:143" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "4. Desarrollo de plantillas y dashboards para la visualización de KPIs ", "fecha": "20/08/24", "monto": 339065, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:152" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa", "concepto": "6. Implementar los KPIs en las operaciones diarias de la empresa y asegurar que todos los involucrados comprendan su importancia y uso ", "fecha": "27/08/24", "monto": 339065, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:155" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Auditorias operativas con proveedores de materiales y equipo", "concepto": "4. Redacción y actualización de manuales de procedimientos ", "fecha": "20/08/24", "monto": 339086, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:691" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Manejo de Quejas", "concepto": "3. Capacitación del personal encargado de recibir las quejas en el uso de los nuevos sistemas y en la atención al cliente", "fecha": "20/08/24", "monto": 347673, "proveedor": "GOLD REPUBLIC CREATIVE", "factura": "F:428" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Manejo de Quejas", "concepto": "5. Capacitación del personal encargado de recibir las quejas en el uso de los formularios y en la atención al cliente ", "fecha": "02/09/24", "monto": 347673, "proveedor": "GOLD REPUBLIC CREATIVE", "factura": "F:455" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Presentación de Resultados y Recomendaciones Finales", "concepto": "Desarrollo de un plan para la implementación completa de OKRs en toda la empresa.", "fecha": "03/12/24", "monto": 348000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:527" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Propuesta de Implementación Piloto", "concepto": "Diseño de un plan detallado de implementación, incluyendo la definición de objetivos, resultados clave, plazos, y roles y responsabilidades.", "fecha": "19/11/24", "monto": 351000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:473" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "6. Seguimiento y Mejora Continua", "concepto": "Monitoreo regular de indicadores clave de desempeño para identificar áreas de mejora.", "fecha": "03/12/24", "monto": 352000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1353" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Desarrollo de Políticas de Abastecimiento Óptimo", "concepto": "Elaboración de Planes de Contingencia", "fecha": "30/10/24", "monto": 352000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:431" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Evaluación de la Aplicabilidad de OKRs en Ryse Medica", "concepto": "Facilitación de Taller con la alta dirección para identificar posibles objetivos estratégicos y resultados clave que podrían ser medidos mediante OKRs.", "fecha": "10/10/24", "monto": 353000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:379" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Propuesta de Implementación Piloto", "concepto": "Supervisión del progreso del piloto, evaluación del desempeño y ajustes necesarios.", "fecha": "25/11/24", "monto": 358000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:485" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Evaluación Final y Plan de Implementación", "concepto": "Presentación de los resultados del programa a la alta dirección, con recomendaciones para futuros planes de desarrollo de liderazgo.", "fecha": "03/12/24", "monto": 375000, "proveedor": "SIEIS", "factura": "F:589" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Identificación de Líderes Potenciales", "concepto": "Evaluación del desempeño actual de los colaboradores mediante revisiones de desempeño y feedback de superiores.", "fecha": "30/09/24", "monto": 385000, "proveedor": "SIEIS", "factura": "F:521" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Capacitación y Mejora Continua", "concepto": "Revisión y Ajuste Periódico de Políticas", "fecha": "03/12/24", "monto": 387000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:524" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas", "concepto": "Foro de discusión con la dirección sobre los retos actuales que enfrenta Ryse Medica al tomar decisiones críticas y cómo estos pueden abordarse eficazmente.", "fecha": "03/10/24", "monto": 389000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:932" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Evaluación Final y Plan de Implementación", "concepto": "Creación de un plan de seguimiento y desarrollo continuo de los líderes, asegurando la sostenibilidad de las capacidades adquiridas.", "fecha": "03/12/24", "monto": 390000, "proveedor": "SIEIS", "factura": "F:588" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Evaluación y Análisis del Inventario Actual", "concepto": "Identificación y Estrategias para Materiales Obsoletos", "fecha": "03/10/24", "monto": 393000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:368" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Identificación de Líderes Potenciales", "concepto": "Identificación y selección de los colaboradores que serán incluidos en el programa de desarrollo de liderazgo.", "fecha": "03/10/24", "monto": 395000, "proveedor": "SIEIS", "factura": "F:522" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Manejo de Quejas", "concepto": "1. Implementación de los canales de comunicación necesarios para la recepción de quejas", "fecha": "08/08/24", "monto": 398610, "proveedor": "GOLD REPUBLIC CREATIVE", "factura": "F:405" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Desarrollo de Políticas de Abastecimiento Óptimo", "concepto": "Desarrollo de Políticas de Abastecimiento Diferenciado", "fecha": "22/10/24", "monto": 401000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:404" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Optimización del Control de Inventarios", "concepto": "Desarrollo de Alertas y Reportes Automatizados", "fecha": "25/11/24", "monto": 401000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1227" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Evaluación e Implementación de OKRs", "rubro": "Evaluación de la Aplicabilidad de OKRs en Ryse Medica", "concepto": "Evaluación de la estructura organizacional, cultura empresarial, y procesos actuales para identificar cómo los OKRs podrían alinearse con las necesidades estratégicas de la empresa.", "fecha": "03/10/24", "monto": 401000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:369" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Capacitación y Mejora Continua", "concepto": "Desarrollo e Implementación de KPIs", "fecha": "03/12/24", "monto": 402000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1356" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Capacitación y Mejora Continua", "concepto": "Capacitación del Personal", "fecha": "03/12/24", "monto": 403000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1342" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Mentoring y Coaching Individualizado", "concepto": "Seguimiento del progreso de los líderes a través de evaluaciones periódicas y retroalimentación constante para ajustar el plan de desarrollo.", "fecha": "03/12/24", "monto": 405000, "proveedor": "SIEIS", "factura": "F:583" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Evaluación Final y Plan de Implementación", "concepto": "Realización de una evaluación integral de los resultados del programa, midiendo el desarrollo de habilidades y el desempeño de los nuevos líderes.", "fecha": "03/12/24", "monto": 405000, "proveedor": "SIEIS", "factura": "F:587" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas", "concepto": "Análisis de casos de éxito de empresas que han tomado decisiones críticas, como grandes inversiones o alianzas estratégicas, destacando los beneficios logrados y las lecciones aprendidas.", "fecha": "30/09/24", "monto": 407000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:908" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Presentación de Resultados y Recomendaciones", "concepto": "Propuesta de un plan de implementación continua de las herramientas y métodos desarrollados, asegurando que la dirección mantenga las mejores prácticas para la toma de decisiones críticas a largo plazo.", "fecha": "13/12/24", "monto": 410000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:933" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Capacitación en Comunicación con Inversionistas", "concepto": "Desarrollo de habilidades para responder a preguntas difíciles de los inversionistas, asegurando una comunicación coherente y alineada con la estrategia de la empresa.", "fecha": "03/10/24", "monto": 410000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1452" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Estrategia para la Búsqueda de Nuevos Inversionistas", "concepto": "Desarrollo de un plan de seguimiento estructurado para asegurar que las relaciones con nuevos inversionistas se mantengan y se avancen hacia el cierre de acuerdos de inversión.", "fecha": "13/12/24", "monto": 425000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:504" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Identificación de Líderes Potenciales", "concepto": "Establecimiento de criterios clave para la selección de líderes potenciales, como habilidades de comunicación, inteligencia emocional, capacidad para resolver problemas y manejo de equipos.", "fecha": "17/09/24", "monto": 425000, "proveedor": "SIEIS", "factura": "F:555" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Mentoring y Coaching Individualizado", "concepto": "Programa de mentoring con líderes más experimentados dentro de la empresa para proporcionar una guía directa y práctica.", "fecha": "25/11/24", "monto": 430000, "proveedor": "SIEIS", "factura": "F:575" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Fomento de la Innovación y Creatividad", "concepto": "Formación de equipos multidisciplinarios enfocados en el desarrollo de proyectos innovadores dentro de la empresa.", "fecha": "03/12/24", "monto": 430000, "proveedor": "SIEIS", "factura": "F:586" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Presentación de Resultados y Recomendaciones", "concepto": "Realización de una presentación ejecutiva para resumir los hallazgos clave y definir los próximos pasos estratégicos para la toma de decisiones críticas dentro de la empresa.", "fecha": "03/12/24", "monto": 431000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1343" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Mentoring y Coaching Individualizado", "concepto": "Realización de sesiones individuales para el desarrollo de habilidades específicas, identificando áreas de mejora y fortaleciendo puntos clave.", "fecha": "25/11/24", "monto": 445000, "proveedor": "SIEIS", "factura": "F:574" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "6. Seguimiento y Mejora Continua", "concepto": "Ejecución de auditorías internas para asegurar el cumplimiento de estándares y procedimientos.", "fecha": "03/12/24", "monto": 448000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1354" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Desarrollo de Habilidades Estratégicas", "concepto": "Desarrollo de habilidades en la gestión de proyectos clave, incluyendo la planificación, ejecución y seguimiento de resultados.", "fecha": "19/11/24", "monto": 450000, "proveedor": "SIEIS", "factura": "F:565" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Desarrollo de Políticas de Abastecimiento Óptimo", "concepto": "Definición de Niveles de Reorden y Políticas de Stock", "fecha": "10/10/24", "monto": 451000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:952" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Evaluación y Análisis del Inventario Actual", "concepto": "Implementación del Análisis ABC", "fecha": "10/09/24", "monto": 452000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:323" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Optimización del Control de Inventarios", "concepto": "Optimización de Procesos de Compras y Almacenamiento", "fecha": "25/11/24", "monto": 452000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1229" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Evaluación y Análisis del Inventario Actual", "concepto": "Evaluación de la Rotación de Inventarios", "fecha": "17/09/24", "monto": 453000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:336" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "4. Capacitación del Personal", "concepto": "Creación de programas de capacitación específicos para el personal del almacén.", "fecha": "12/09/24", "monto": 458000, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:168" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Desarrollo de Habilidades Estratégicas", "concepto": "Talleres enfocados en la comprensión del negocio desde una perspectiva más amplia, fomentando una visión empresarial integral.", "fecha": "19/11/24", "monto": 460000, "proveedor": "SIEIS", "factura": "F:566" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Fomento de la Innovación y Creatividad", "concepto": "Desarrollo de la creatividad en la solución de problemas complejos a través de ejercicios prácticos y estudios de caso.", "fecha": "03/12/24", "monto": 460000, "proveedor": "SIEIS", "factura": "F:585" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis e Interpretación de Resultados de Tendencias", "concepto": "Desarrollo de propuestas estratégicas para mejorar la competitividad de Ryse Medica en futuras licitaciones, basadas en los resultados analizados.", "fecha": "13/12/24", "monto": 464000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F721" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Capacitación en Comunicación con Inversionistas", "concepto": "Capacitación para presentar informes operativos de manera que resalten los logros clave y los planes estratégicos, sin dejar de abordar los riesgos y las áreas de mejora.", "fecha": "30/09/24", "monto": 465000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:909" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Capacitación en Habilidades de Liderazgo", "concepto": "Desarrollo de habilidades para la toma de decisiones críticas y la resolución efectiva de conflictos dentro del equipo.", "fecha": "22/10/24", "monto": 470000, "proveedor": "SIEIS", "factura": "F:543" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Estrategia para la Búsqueda de Nuevos Inversionistas", "concepto": "Capacitación en las mejores prácticas para iniciar contactos con nuevos inversionistas, destacando los puntos clave de la propuesta de valor de Ryse Medica.", "fecha": "03/12/24", "monto": 475000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:528" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Evaluación de Flujos de Caja y Liquidez", "concepto": "Revisión de las políticas de liquidez para asegurar disponibilidad de fondos en momentos clave.", "fecha": "25/11/24", "monto": 475600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1236" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Reporte de Gestión y Sostenibilidad de Tesorería", "concepto": "Presentación de resultados y estrategias a la alta dirección, destacando el plan de liquidez y oportunidades de inversión.", "fecha": "13/12/24", "monto": 475600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1459" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Elaboración de Informes Financieros y Operativos", "concepto": "Creación de plantillas estandarizadas para presentar de forma clara los logros operativos, métricas clave y futuros objetivos.", "fecha": "22/10/24", "monto": 480000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:406" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Desarrollo de Habilidades Estratégicas", "concepto": "Entrenamiento en la creación de estrategias a largo plazo, gestión de recursos y anticipación de cambios en el entorno empresarial.", "fecha": "04/11/24", "monto": 480000, "proveedor": "SIEIS", "factura": "F:554" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Fomento de la Innovación y Creatividad", "concepto": "Capacitación en metodologías de innovación, como Design Thinking, para generar soluciones innovadoras.", "fecha": "03/12/24", "monto": 485000, "proveedor": "SIEIS", "factura": "F:584" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Presentación de Resultados y Recomendaciones", "concepto": "Preparación de un informe detallado con los resultados de las capacitaciones, análisis de feedback del equipo directivo y recomendaciones para la implementación continua de las herramientas.", "fecha": "25/11/24", "monto": 489000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1226" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Capacitación en Toma de Decisiones Basadas en Datos y KPIs", "concepto": "Realización de simulaciones de escenarios donde los KPIs son el factor principal para evaluar el impacto de decisiones estratégicas, tales como expansiones, inversiones y nuevos mercados.", "fecha": "19/11/24", "monto": 495000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:542" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Capacitación en Habilidades de Liderazgo", "concepto": "Formación en gestión de equipos de trabajo, incluyendo delegación de responsabilidades, motivación y seguimiento.", "fecha": "22/10/24", "monto": 495000, "proveedor": "SIEIS", "factura": "F:494" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "rubro": "Manejo de Quejas", "concepto": "4. Configuración e implementación de un sistema centralizado para registrar y gestionar todas las quejas recibidas", "fecha": "27/08/24", "monto": 495180, "proveedor": "GOLD REPUBLIC CREATIVE", "factura": "F:439" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "4. Capacitación del Personal", "concepto": "Capacitación del personal en el uso de equipos de manejo de materiales y en la operación del almacén según el nuevo layout.", "fecha": "03/10/24", "monto": 496000, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:189" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "6. Seguimiento y Mejora Continua", "concepto": "Implementación de mejoras continuas basadas en los resultados de las auditorías y el análisis de datos.", "fecha": "03/12/24", "monto": 497000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1355" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Evaluación y Análisis del Inventario Actual", "concepto": "Diagnóstico y Clasificación del Inventario", "fecha": "10/09/24", "monto": 502000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:792" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "4. Capacitación del Personal", "concepto": "Capacitación del personal en el uso del sistema de gestión de almacenes.", "fecha": "22/10/24", "monto": 503000, "proveedor": "LED IMPULSO E INNOVACION", "factura": "F:202" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Presentaciones Estratégicas para Inversionistas", "concepto": "Formación en técnicas de presentación efectivas, que permitan a la dirección transmitir confianza y profesionalismo durante las reuniones con inversionistas.", "fecha": "19/11/24", "monto": 510000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:527" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "rubro": "Capacitación en Habilidades de Liderazgo", "concepto": "Capacitación en habilidades de comunicación asertiva y escucha activa para mejorar la interacción con los equipos.", "fecha": "10/10/24", "monto": 510000, "proveedor": "SIEIS", "factura": "F:474" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Optimización de la Gestión de Liquidez", "concepto": "Implementación de herramientas de monitoreo de liquidez para una revisión continua.", "fecha": "25/11/24", "monto": 513200, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1238" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas", "concepto": "Capacitación en la evaluación y selección de socios estratégicos, utilizando criterios clave como sinergias operativas, integración cultural y riesgos de mercado.", "fecha": "22/10/24", "monto": 514000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1024" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Evaluación de Flujos de Caja y Liquidez", "concepto": "Análisis detallado de los flujos de caja actuales para determinar patrones y necesidades de liquidez.", "fecha": "25/11/24", "monto": 514000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1235" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Optimización de la Gestión de Liquidez", "concepto": "Diseño de estrategias de optimización de tesorería, asegurando un balance adecuado entre liquidez y rendimiento.", "fecha": "25/11/24", "monto": 545000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1237" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Presentaciones Estratégicas para Inversionistas", "concepto": "Ejercicios prácticos donde la dirección presente informes y responda preguntas simuladas por expertos, recibiendo retroalimentación sobre su desempeño.", "fecha": "19/11/24", "monto": 550000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:475" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Capacitación en Toma de Decisiones Basadas en Datos y KPIs", "concepto": "Capacitación en herramientas de análisis de datos (BI, dashboards) que permitan a la dirección tener visibilidad en tiempo real sobre los datos críticos para la toma de decisiones.", "fecha": "19/11/24", "monto": 552000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:493" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Estrategia para la Búsqueda de Nuevos Inversionistas", "concepto": "Desarrollo de una estrategia de segmentación para identificar inversionistas potenciales que estén alineados con la visión y misión de Ryse Medica.", "fecha": "25/11/24", "monto": 565000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:483" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Estrategias de Inversión para Excedentes de Efectivo", "concepto": "Desarrollo de un portafolio de inversión basado en criterios de seguridad y rendimiento.", "fecha": "03/12/24", "monto": 565400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1359" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Elaboración de Informes Financieros y Operativos", "concepto": "Capacitación en cómo evaluar y presentar los resultados operativos, integrando métricas clave de desempeño (KPIs) para facilitar el análisis por parte de los inversionistas.", "fecha": "22/10/24", "monto": 570000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:407" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas", "concepto": "Formación específica en técnicas de identificación, cuantificación y mitigación de riesgos en decisiones críticas, utilizando matrices de riesgo y simulaciones de escenarios.", "fecha": "22/10/24", "monto": 571000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1023" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Capacitación en Toma de Decisiones Basadas en Datos y KPIs", "concepto": "Taller para identificar los KPIs más relevantes para el éxito de Ryse Medica en decisiones clave, como expansión a nuevos mercados o grandes inversiones.", "fecha": "04/11/24", "monto": 587000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:437" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas", "concepto": "Introducción a los factores clave que influyen en la toma de decisiones estratégicas de alto impacto, enfocándose en análisis de riesgo, retorno de la inversión (ROI) y escenarios.", "fecha": "17/09/24", "monto": 590000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:824" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Capacitación en Comunicación con Inversionistas", "concepto": "Formación sobre cómo transmitir información financiera de manera clara y concisa, enfocándose en temas como el rendimiento, la estabilidad financiera y las proyecciones futuras.", "fecha": "17/09/24", "monto": 595000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:825" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "5. Implementación y Puesta en Marcha", "concepto": "Realización de ajustes operativos y organizativos según los resultados de la monitorización inicial.", "fecha": "03/12/24", "monto": 597000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1341" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "rubro": "Optimización del Control de Inventarios", "concepto": "Implementación de Sistema de Gestión de Inventarios", "fecha": "19/11/24", "monto": 601000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1175" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "5. Implementación y Puesta en Marcha", "concepto": "Monitoreo de los principales indicadores de rendimiento durante la fase inicial de operaciones.", "fecha": "25/11/24", "monto": 608000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1228" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Elaboración de Informes Financieros y Operativos", "concepto": "Formación en la preparación de informes financieros que resalten el rendimiento de la empresa, centrándose en los indicadores clave como EBITDA, crecimiento y márgenes operativos.", "fecha": "10/10/24", "monto": 610000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:380" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Estrategias de Inversión para Excedentes de Efectivo", "concepto": "Identificación de oportunidades de inversión seguras y rentables para los excedentes de tesorería.", "fecha": "03/12/24", "monto": 612500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1347" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Relación con Inversionistas", "rubro": "Presentaciones Estratégicas para Inversionistas", "concepto": "Creación de un formato efectivo de presentación que destaque los principales hitos financieros y operativos de la empresa, además de los objetivos estratégicos.", "fecha": "04/11/24", "monto": 615000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:447" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Análisis y Definición del Perfil del Talento", "concepto": "Desarrollo de perfiles de competencias y habilidades requeridas por área.", "fecha": "04/11/24", "monto": 619000, "proveedor": "GENTIS PRESTACION DE SERVICIOS ESPECIALIZADOS", "factura": "F:533" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Capacitación para la Toma de Decisiones Críticas", "rubro": "Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas", "concepto": "Creación de plantillas y modelos financieros para evaluar inversiones, incluyendo análisis de costo-beneficio, flujo de caja descontado (DCF), y evaluación de sensibilidad.", "fecha": "10/10/24", "monto": 620000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:953" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Evaluación de Relaciones Institucionales y Mejora Continua", "concepto": "Revisión de indicadores de éxito y ajuste de la estrategia de relacionamiento según resultados.", "fecha": "13/12/24", "monto": 623450, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F723" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Estrategias de Atracción de Talento", "concepto": "Identificación de socios estratégicos en instituciones educativas y bolsas de trabajo locales.", "fecha": "19/11/24", "monto": 637230, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:496" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Reportes y Análisis de Eficacia Presupuestal", "concepto": "Revisión y optimización de los límites y procesos presupuestales en función de los resultados de la implementación inicial.", "fecha": "13/12/24", "monto": 640320, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1455" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Reporte y Recomendaciones para Incrementar Rentabilidad", "concepto": "Presentación ejecutiva a la alta dirección sobre las recomendaciones y estrategias sugeridas.", "fecha": "13/12/24", "monto": 650500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1457" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Análisis de Costos y Márgenes Operativos Actuales", "concepto": "Evaluación de los márgenes operativos actuales y comparación con benchmarks de la industria.", "fecha": "25/11/24", "monto": 654000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1233" },
+  { "area": "A-7 Finanzas", "proyecto": "Gestion de l Area de Tesoreria", "rubro": "Reporte de Gestión y Sostenibilidad de Tesorería", "concepto": "Informe de gestión de tesorería y recomendaciones de sostenibilidad.", "fecha": "13/12/24", "monto": 655100, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1458" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Diagnóstico del Entorno Organizacional", "concepto": "Evaluación de la capacidad actual de la organización para manejar cambios en regiones y tecnologías.", "fecha": "26/11/24", "monto": 680200, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:497" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": " Identificación de Roles Críticos", "concepto": "Análisis organizacional para identificar roles clave y críticos en las operaciones de Ciudad de México y Guadalajara.", "fecha": "26/11/24", "monto": 680500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1253" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Evaluación de la Situación Financiera Actual", "concepto": "Identificación de áreas de riesgo financiero y oportunidades de optimización.", "fecha": "26/11/24", "monto": 680900, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1251" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Análisis y Definición del Perfil del Talento", "concepto": "Análisis de necesidades de talento por región y definición de perfiles estratégicos.", "fecha": "22/10/24", "monto": 682550, "proveedor": "GENTIS PRESTACION DE SERVICIOS ESPECIALIZADOS", "factura": "F:516" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "1. Revisión del Proyecto y Ajustes Necesarios", "concepto": "Identificación de desviaciones respecto al plan original y recomendación de ajustes.", "fecha": "27/08/24", "monto": 683000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:718" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Análisis de Elasticidad de Precios", "concepto": "Estudio sobre la sensibilidad del cliente ante cambios en precios de productos y servicios clave.", "fecha": "26/11/24", "monto": 685700, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:547" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Identificación de Competidores Clave", "concepto": "Clasificación de competidores según participación de mercado y relevancia estratégica.", "fecha": "26/11/24", "monto": 685900, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:552" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Diagnóstico de Cumplimiento en Gobierno Corporativo", "concepto": "Evaluación del cumplimiento actual de normativas y prácticas de gobierno corporativo.", "fecha": "26/11/24", "monto": 695800, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1247" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Reportes y Análisis de Eficacia Presupuestal", "concepto": "Generación de reportes mensuales de desempeño presupuestal, con análisis de cumplimiento por rubro.", "fecha": "13/12/24", "monto": 703200, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1454" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Diagnóstico Organizacional de Diversidad e Inclusión", "concepto": "Evaluación de la situación actual en términos de diversidad e inclusión en la organización.", "fecha": "25/11/24", "monto": 705600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:487" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": " Análisis de Desempeño de Propuestas", "concepto": "Evaluación del desempeño comparativo frente a competidores en licitaciones específicas.", "fecha": "25/11/24", "monto": 710400, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:490" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": " Identificación de Roles Críticos", "concepto": "Evaluación de competencias necesarias para los roles clave identificados.", "fecha": "26/11/24", "monto": 710400, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:501" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Diagnóstico del Entorno Organizacional", "concepto": "Identificación de barreras al cambio organizacional en áreas clave.", "fecha": "26/11/24", "monto": 715800, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:498" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Programas de Desarrollo de Talento", "concepto": " Implementación de programas de mentoría y coaching para el desarrollo de líderes internos.", "fecha": "25/11/24", "monto": 719800, "proveedor": "GENTIS PRESTACION DE SERVICIOS ESPECIALIZADOS", "factura": "F:555" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Evaluación de la Situación Financiera Actual", "concepto": "Análisis del estado financiero actual de la empresa, incluyendo ingresos, costos y estructura de deuda.", "fecha": "26/11/24", "monto": 720400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1250" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Análisis de Elasticidad de Precios", "concepto": "Identificación de puntos de precio óptimos según segmentos de mercado.", "fecha": "26/11/24", "monto": 720500, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:548" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Desarrollo de Estrategias de Gestión del Cambio", "concepto": "Creación de un plan de comunicación interna para apoyar la implementación de cambios.", "fecha": "26/11/24", "monto": 720600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:500" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Identificación de Áreas de Optimización de Costos", "concepto": "Desarrollo de un plan de reducción de costos en áreas clave, alineado con los objetivos estratégicos.", "fecha": "25/11/24", "monto": 721000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1234" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Diagnóstico de Cumplimiento en Gobierno Corporativo", "concepto": "Identificación de brechas en las prácticas de transparencia y responsabilidad corporativa.", "fecha": "26/11/24", "monto": 725600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1248" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Identificación de Competidores Clave", "concepto": "Investigación de competidores directos e indirectos en los mercados objetivo de Ryse Medica.", "fecha": "26/11/24", "monto": 725800, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:551" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Análisis y Definición de Límites Presupuestales", "concepto": "Definición de límites presupuestales mensuales para cada rubro de egreso, considerando la línea base y objetivos de eficiencia.", "fecha": "25/11/24", "monto": 732000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1223" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Análisis de Costos y Márgenes Operativos Actuales", "concepto": "Recopilación y análisis de datos de costos directos e indirectos asociados a productos y servicios clave.", "fecha": "25/11/24", "monto": 732000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1232" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Estrategias de Atracción de Talento", "concepto": "Diseño de campañas de atracción de talento para las regiones objetivo, utilizando canales digitales y tradicionales.", "fecha": "19/11/24", "monto": 739500, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:495" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Estrategia de Relacionamiento Institucional", "concepto": "Propuesta de iniciativas conjuntas con instituciones públicas y privadas para optimizar los servicios integrales en cirugía de especialidad.", "fecha": "19/11/24", "monto": 741000, "proveedor": "MEDISULT", "factura": "F:335" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Evaluación de Relaciones Institucionales y Mejora Continua", "concepto": "Evaluación del impacto de las relaciones institucionales desarrolladas y propuestas de mejora continua.", "fecha": "13/12/24", "monto": 743500, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F722" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": " Análisis de Desempeño de Propuestas", "concepto": "Recopilación y análisis de datos de licitaciones recentes para identificar factores clave de éxito.", "fecha": "25/11/24", "monto": 745300, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:489" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Creación de un Sistema de Monitoreo Presupuestal", "concepto": "Capacitación del personal en el uso del sistema y en la interpretación de los informes de seguimiento presupuestal.", "fecha": "25/11/24", "monto": 745600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1231" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Monitoreo y Evaluación de la Gestión del Talento", "concepto": "Ajustes a los planes de desarrollo y retención basados en los resultados obtenidos y el feedback de los empleados.", "fecha": "13/12/24", "monto": 746300, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F705" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Benchmarking de Precios Competitivos", "concepto": "Análisis comparativo de precios con competidores directos e indirectos en el mercado.", "fecha": "26/11/24", "monto": 750400, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:549" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Desarrollo de un Plan de Sucesión", "concepto": "Identificación y preparación de candidatos internos para roles de sucesión.", "fecha": "03/12/24", "monto": 755600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:532" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Programas de Desarrollo de Talento", "concepto": "Creación de programas de formación y desarrollo para los empleados clave, con enfoque en habilidades técnicas y de liderazgo.", "fecha": "25/11/24", "monto": 764300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1225" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Análisis de Mercado y Viabilidad de Modelos Innovadores", "concepto": "Análisis de benchmarking con empresas internacionales que utilizan modelos de negocio similares.", "fecha": "25/11/24", "monto": 765000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:486" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Evaluación de Estrategias y Fortalezas", "concepto": "Identificación de las fortalezas y ventajas competitivas más destacadas de los principales actores del mercado.", "fecha": "26/11/24", "monto": 765700, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:553" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Desarrollo de Escenarios Financieros", "concepto": "Proyección de escenarios operativos basados en estrategias de expansión y optimización.", "fecha": "03/12/24", "monto": 765800, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1351" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Investigación de Licitaciones Anteriores (3 años)", "concepto": "Análisis de patrones y tendencias en compras de equipos médicos.", "fecha": "22/10/24", "monto": 769000, "proveedor": "MEDISULT", "factura": "F:301" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Desarrollo de un Plan de Sucesión", "concepto": "Creación de un plan de sucesión que detalle procesos y criterios para la transición en roles críticos.", "fecha": "26/11/24", "monto": 780300, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:502" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Desarrollo de Estrategias de Gestión del Cambio", "concepto": "Diseño de estrategias para manejar resistencias al cambio y fomentar una cultura de adaptación.", "fecha": "26/11/24", "monto": 780400, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:499" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Revisión y Optimización de Precios", "concepto": "Desarrollo de una estrategia de precios óptima para maximizar la rentabilidad y competitividad.", "fecha": "03/12/24", "monto": 784300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1358" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Diagnóstico Organizacional de Diversidad e Inclusión", "concepto": "Análisis comparativo con estándares internacionales y mejores prácticas en diversidad e inclusión.", "fecha": "25/11/24", "monto": 785200, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:488" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Análisis y Definición de Límites Presupuestales", "concepto": "Análisis histórico de gastos y compras", "fecha": "25/11/24", "monto": 786400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1222" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Identificación de Áreas de Mejora", "concepto": "Desarrollo de estrategias para mejorar la puntuación en futuras licitaciones.", "fecha": "25/11/24", "monto": 790200, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:1349" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Desarrollo de Políticas de Buen Gobierno", "concepto": " Creación de un manual de gobierno corporativo alineado con normativas locales e internacionales.", "fecha": "03/12/24", "monto": 790200, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:492" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Evaluación de Estrategias y Fortalezas", "concepto": "Análisis de estrategias comerciales y operativas utilizadas por los competidores clave.", "fecha": "26/11/24", "monto": 790400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1246" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Desarrollo de Políticas de Diversidad e Inclusión", "concepto": "Creación de un manual operativo para implementar las políticas de inclusión.", "fecha": "13/12/24", "monto": 790800, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F561" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Implementación de Programas de Relacionamiento", "concepto": "Planificación y ejecución de reuniones estratégicas con instituciones clave para fortalecer las relaciones y presentar propuestas de colaboración.", "fecha": "19/11/24", "monto": 793000, "proveedor": "DESPACHO JURIDICO IURIS TANTUM", "factura": "F:896" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Benchmarking de Precios Competitivos", "concepto": "Evaluación de estrategias de precios utilizadas por competidores líderes.", "fecha": "26/11/24", "monto": 795300, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:550" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "5. Implementación y Puesta en Marcha", "concepto": "Supervisión del proceso de traslado de inventario al nuevo almacén.", "fecha": "19/11/24", "monto": 803000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1174" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Desarrollo de Escenarios Financieros", "concepto": "Creación de escenarios financieros considerando variables económicas clave como inflación, tasas de interés y tipo de cambio.", "fecha": "26/11/24", "monto": 805200, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1252" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Desarrollo de Políticas de Buen Gobierno", "concepto": "Diseño de políticas y procedimientos para fortalecer la gobernanza corporativa.", "fecha": "26/11/24", "monto": 805400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1249" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Identificación de Áreas de Optimización de Costos", "concepto": "Análisis de áreas de oportunidad para reducir costos sin afectar la calidad del servicio.", "fecha": "25/11/24", "monto": 806700, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1239" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Desarrollo de Políticas de Diversidad e Inclusión", "concepto": "Diseño de políticas organizacionales para fomentar la diversidad y el respeto por las diferencias.", "fecha": "03/12/24", "monto": 810400, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:530" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Análisis de Debilidades y Áreas de Mejora", "concepto": "Desarrollo de un plan de acción para aprovechar las debilidades de los competidores en beneficio de Ryse Medica.", "fecha": "13/12/24", "monto": 810600, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F724" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Programas de Desarrollo y Capacitación", "concepto": "Implementación de programas de desarrollo para preparar a los candidatos seleccionados.", "fecha": "03/12/24", "monto": 810700, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:533" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales", "concepto": "Colocación de etiquetas y mapas de ubicación en todo el almacén para facilitar la identificación de equipos e instrumentales.", "fecha": "22/10/24", "monto": 811000, "proveedor": "DARMESA TECNOLOGIAS", "factura": "F:252" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Determinación de la Estructura de Precios Óptima", "concepto": "Modelado de estructuras de precios para maximizar el valor percibido y las ventas.", "fecha": "03/12/24", "monto": 815900, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1348" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Implementación de Controles y Procesos Presupuestales", "concepto": "Evaluación de los movimientos mensuales y comparación con los límites establecidos, identificando desviaciones y áreas de ajuste.", "fecha": "03/12/24", "monto": 817600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1357" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Estrategias de Retención y Bienestar del Talento", "concepto": "Desarrollo de estrategias de retención de talento, incluyendo planes de compensación competitiva y programas de bienestar.", "fecha": "03/12/24", "monto": 819450, "proveedor": "GENTIS PRESTACION DE SERVICIOS ESPECIALIZADOS", "factura": "F:567" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Recomendaciones Estratégicas para Participación en Licitaciones", "concepto": "Capacitación interna para equipos de ventas y licitaciones sobre las nuevas tendencias.", "fecha": "03/12/24", "monto": 820000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:634" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Análisis de Mercado y Viabilidad de Modelos Innovadores", "concepto": "Investigación de mercado para evaluar la demanda y viabilidad de modelos de negocio innovadores (leasing, suscripción, asociaciones público-privadas).", "fecha": "25/11/24", "monto": 820000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:539" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Capacitación y Sensibilización en Gobierno Corporativo", "concepto": "Desarrollo de programas de capacitación para la alta dirección y mandos medios sobre buenas prácticas de gobernanza.", "fecha": "03/12/24", "monto": 820300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1350" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Análisis de Debilidades y Áreas de Mejora", "concepto": "Evaluación de las debilidades y amenazas que enfrentan los competidores en el mercado.", "fecha": "03/12/24", "monto": 830200, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F573" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Programas de Desarrollo y Capacitación", "concepto": "Evaluación y ajuste de programas de capacitación según el desempeño de los candidatos.", "fecha": "13/12/24", "monto": 830200, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:635" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Desarrollo de Planes Financieros a Largo Plazo", "concepto": "Diseño de planes financieros que consideren los escenarios proyectados y las metas estratégicas de la empresa.", "fecha": "03/12/24", "monto": 830300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1352" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Identificación de Áreas de Mejora", "concepto": "Análisis de debilidades en las propuestas presentadas, con enfoque en criterios de evaluación utilizados por los clientes.", "fecha": "25/11/24", "monto": 830700, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:491" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Estrategia de Relacionamiento Institucional", "concepto": "Desarrollo de una estrategia de relacionamiento con instituciones clave, enfocada en fortalecer las alianzas y abrir oportunidades de colaboración.", "fecha": "19/11/24", "monto": 833000, "proveedor": "DESPACHO JURIDICO IURIS TANTUM", "factura": "F:895" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Capacitación y Desarrollo de Competencias", "concepto": "Diseño de programas de capacitación para preparar a los empleados para nuevas tecnologías y procesos.", "fecha": "13/12/24", "monto": 835300, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F569" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Implementación de Controles y Procesos Presupuestales", "concepto": "Implementación de procesos de autorización y control de egresos.", "fecha": "03/12/24", "monto": 836000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1345" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Investigación de Licitaciones Anteriores (3 años)", "concepto": "Recopilación de datos de licitaciones públicas de equipos médicos en hospitales de especialidad durante los últimos tres años.", "fecha": "22/10/24", "monto": 840000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:402" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Programas de Capacitación y Sensibilización", "concepto": "Desarrollo de programas de sensibilización para empleados sobre temas de diversidad e inclusión.", "fecha": "13/12/24", "monto": 840300, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F562" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Determinación de la Estructura de Precios Óptima", "concepto": "Desarrollo de recomendaciones para implementar cambios en la estrategia de precios.", "fecha": "13/12/24", "monto": 840800, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1460" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis e Interpretación de Resultados de Tendencias", "concepto": "Interpretación de datos y análisis de las implicaciones de las tendencias en las decisiones de Ryse Medica.", "fecha": "13/12/24", "monto": 841000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F720" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Estrategias de Retención y Bienestar del Talento", "concepto": "Creación de un plan de carrera y desarrollo personalizado para empleados clave.", "fecha": "13/12/24", "monto": 842700, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1453" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Desarrollo de Planes Financieros a Largo Plazo", "concepto": "Recomendaciones para optimizar el manejo de recursos financieros a largo plazo.", "fecha": "13/12/24", "monto": 845500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1468" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Identificación y Mapeo de Instituciones Clave", "concepto": "Identificación de tomadores de decisiones en hospitales de especialidad y entidades gubernamentales.", "fecha": "04/11/24", "monto": 850000, "proveedor": "DESPACHO JURIDICO IURIS TANTUM", "factura": "F:841" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis de Requisitos de Licitaciones Actuales", "concepto": "Análisis de las oportunidades de mejora y optimización en las ofertas de Ryse Medica.", "fecha": "19/11/24", "monto": 850100, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1176" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "1. Revisión del Proyecto y Ajustes Necesarios", "concepto": "Revisión y actualización del plan maestro para alinearse con los resultados de la auditoría.", "fecha": "12/09/24", "monto": 853000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:801" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Capacitación y Sensibilización en Gobierno Corporativo", "concepto": "Implementación de talleres de transparencia y ética corporativa.", "fecha": "13/12/24", "monto": 860500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1465" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Programas de Capacitación y Sensibilización", "concepto": "Capacitación a líderes y mandos medios sobre prácticas inclusivas en la gestión de equipos.", "fecha": "13/12/24", "monto": 860900, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F563" },
+  { "area": "A-7 Finanzas", "proyecto": "Desarrollo y gestión presupuestal", "rubro": "Creación de un Sistema de Monitoreo Presupuestal", "concepto": "Diseño de un sistema de monitoreo de presupuesto para el seguimiento mensual de gastos y compras.", "fecha": "25/11/24", "monto": 862000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1224" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Estrategias de Alianzas y Asociaciones Público-Privadas", "concepto": "Propuesta de alianzas estratégicas con fabricantes y proveedores de tecnología médica para respaldar los nuevos modelos de negocio.", "fecha": "13/12/24", "monto": 865000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F570" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Capacitación y Desarrollo de Competencias", "concepto": "Implementación de talleres de adaptación al cambio para líderes y mandos medios.", "fecha": "13/12/24", "monto": 865000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:558" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Informe y Recomendaciones Estratégicas", "concepto": "Presentación ejecutiva de los resultados del análisis a la alta dirección.", "fecha": "13/12/24", "monto": 870300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1464" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Implementación y Monitoreo de Proyecciones", "concepto": "Ajuste de planes financieros basados en el desempeño real y cambios en el entorno económico.", "fecha": "13/12/24", "monto": 870600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1470" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Diseño de Esquemas de Negocio Innovadores", "concepto": "Creación de un modelo de leasing para equipos médicos, ajustado a las necesidades de hospitales públicos y privados.", "fecha": "03/12/24", "monto": 880000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:529" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Monitoreo y Evaluación de Impacto", "concepto": "Evaluación del impacto y ajuste de las políticas y programas según resultados obtenidos.", "fecha": "13/12/24", "monto": 880500, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F565" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Evaluación y Ajustes de Estrategias de Precios", "concepto": "Ajustes y refinamiento de la estrategia de precios basada en simulaciones.", "fecha": "13/12/24", "monto": 880600, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1466" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Desarrollo de Alianzas Estratégicas a Largo Plazo", "concepto": "Creación de planes de alianzas estratégicas a largo plazo con hospitales y entidades gubernamentales, asegurando la permanencia de las relaciones.", "fecha": "03/12/24", "monto": 882000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1344" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Monitoreo y Mejora Continua", "concepto": "Ajuste de políticas y procedimientos basados en los resultados del monitoreo y mejores prácticas.", "fecha": "13/12/24", "monto": 890300, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1467" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Monitoreo y Evaluación del Cambio", "concepto": "Revisión y ajuste de estrategias según resultados obtenidos.", "fecha": "13/12/24", "monto": 890400, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F572" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Revisión de Procedimientos Internos", "concepto": "Evaluación de los procesos internos de preparación de licitaciones para identificar eficiencias operativas.", "fecha": "03/12/24", "monto": 890600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:531" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Revisión de Procedimientos Internos", "concepto": "Propuesta de mejoras en los procedimientos internos para optimizar tiempos y calidad de las propuestas.", "fecha": "13/12/24", "monto": 890600, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:566" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Diseño de Esquemas de Negocio Innovadores", "concepto": "Desarrollo de un esquema de suscripción para servicios integrales de cirugía, con paquetes personalizados por tipo de especialidad.", "fecha": "13/12/24", "monto": 892000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:556" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Revisión y Optimización de Precios", "concepto": "Análisis de precios actuales y su impacto en la rentabilidad de productos y servicios.", "fecha": "03/12/24", "monto": 893500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1346" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Implementación y Evaluación de Prototipos", "concepto": "Evaluación del impacto esperado en la rentabilidad y eficiencia operativa mediante simulaciones de los modelos propuestos.", "fecha": "13/12/24", "monto": 894000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F560" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Monitoreo y Ajustes del Plan de Sucesión", "concepto": "Ajuste del plan de sucesión basado en cambios organizacionales y resultados de monitoreo.", "fecha": "13/12/24", "monto": 894500, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F575" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Análisis de la Competencia", "rubro": "Informe y Recomendaciones Estratégicas", "concepto": "Elaboración de un informe detallado con hallazgos clave y recomendaciones para fortalecer la posición de Ryse Medica.", "fecha": "13/12/24", "monto": 895400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1463" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "rubro": "Monitoreo y Evaluación de la Gestión del Talento", "concepto": "Evaluación continua de la efectividad de las estrategias de atracción, desarrollo y retención de talento.", "fecha": "13/12/24", "monto": 895600, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F704" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales", "concepto": "Integración de la asignación de ubicaciones en el sistema de gestión de almacenes.", "fecha": "10/10/24", "monto": 897000, "proveedor": "DARMESA TECNOLOGIAS", "factura": "F:237" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Investigación de Precios", "rubro": "Evaluación y Ajustes de Estrategias de Precios", "concepto": "Evaluación del impacto financiero de las estructuras de precios propuestas.", "fecha": "13/12/24", "monto": 905400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1466" },
+  { "area": "A-1 Dirección ejecutiva", "proyecto": "Gobierno Corporativo", "rubro": "Monitoreo y Mejora Continua", "concepto": "Implementación de un sistema de monitoreo para evaluar la efectividad de las políticas de gobierno corporativo.", "fecha": "13/12/24", "monto": 905400, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1461" },
+  { "area": "A-7 Finanzas", "proyecto": "Planificación Financiera y Proyecciones", "rubro": "Implementación y Monitoreo de Proyecciones", "concepto": "Implementación de herramientas para monitorear el desempeño financiero frente a los planes proyectados.", "fecha": "13/12/24", "monto": 906500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1469" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Informe y Presentación de Resultados", "concepto": "Presentación ejecutiva del informe y discusión de estrategias con la alta dirección.", "fecha": "13/12/24", "monto": 910200, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F567" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Adaptación a Cambios Organizacionales", "rubro": "Monitoreo y Evaluación del Cambio", "concepto": "Monitoreo del progreso de la implementación de cambios y evaluación de su impacto en la organización.", "fecha": "13/12/24", "monto": 910800, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F571" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis de Requisitos de Licitaciones Actuales", "concepto": "Evaluación de los requisitos técnicos y financieros de las licitaciones actuales en hospitales de especialidad.", "fecha": "04/11/24", "monto": 912000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:448" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Implementación y Evaluación de Prototipos", "concepto": "Diseño de prototipos financieros y operativos para validar los modelos desarrollados.", "fecha": "13/12/24", "monto": 912000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:559" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Gestión de Diversidad e Inclusión", "rubro": "Monitoreo y Evaluación de Impacto", "concepto": "Diseño de indicadores clave para medir el impacto de las políticas de diversidad e inclusión.", "fecha": "13/12/24", "monto": 925700, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F564" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "3. Acondicionamiento y Configuración del Almacén", "concepto": "Ejecución de pruebas operativas para asegurar que todos los sistemas y procesos funcionen correctamente.", "fecha": "25/11/24", "monto": 927000, "proveedor": "DE ANDA Y CALVILLO PUENTES Y SUPERVIAS", "factura": "F:207" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Evaluación de Resultados de Licitaciones", "rubro": "Informe y Presentación de Resultados", "concepto": "Elaboración de un informe con resultados del análisis y recomendaciones específicas para futuras licitaciones.", "fecha": "13/12/24", "monto": 930500, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F567" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "concepto": "Análisis de innovaciones tecnológicas esperadas en las licitaciones.", "fecha": "25/11/24", "monto": 937000, "proveedor": "MEDISULT", "factura": "F:339" },
+  { "area": "A-4 Desarrollo de productos y servicios", "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "rubro": "Estrategias de Alianzas y Asociaciones Público-Privadas", "concepto": "Identificación de oportunidades para asociaciones público-privadas en hospitales de especialidad.", "fecha": "13/12/24", "monto": 940000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:557" },
+  { "area": "A-7 Finanzas", "proyecto": "Análisis de Rentabilidad", "rubro": "Reporte y Recomendaciones para Incrementar Rentabilidad", "concepto": "Elaboración de un reporte final con recomendaciones detalladas para mejorar la rentabilidad a través de costos y precios optimizados.", "fecha": "13/12/24", "monto": 944500, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1456" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "1. Revisión del Proyecto y Ajustes Necesarios", "concepto": "Evaluación completa del estado actual del proyecto del nuevo almacen de la empresa, incluyendo visitas al sitio y reuniones con el equipo de proyecto.", "fecha": "15/08/24", "monto": 947000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:662" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Recomendaciones Estratégicas para Participación en Licitaciones", "concepto": "Desarrollo de recomendaciones estratégicas basadas en el análisis de tendencias y proyecciones.", "fecha": "03/12/24", "monto": 963000, "proveedor": "BAUHAUS STREET MEDIA", "factura": "F:633" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Implementación de Programas de Relacionamiento", "concepto": "Seguimiento de las iniciativas y negociaciones para el cierre de acuerdos estratégicos.", "fecha": "25/11/24", "monto": 965000, "proveedor": "BLACK PANEL SA DE CV", "factura": "F:1230" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Desarrollo de Alianzas Estratégicas a Largo Plazo", "concepto": " Propuesta de protocolos de colaboración institucional que fortalezan la posición de Ryse Medica como líder en cirugía de especialidad.", "fecha": "03/12/24", "monto": 966000, "proveedor": "MEDISULT", "factura": "F:352" },
+  { "area": "A-6 Recursos Humanos", "proyecto": "Planificación de Sucesión", "rubro": "Monitoreo y Ajustes del Plan de Sucesión", "concepto": "Monitoreo continuo del plan de sucesión para garantizar su alineación con los objetivos estratégicos.", "fecha": "13/12/24", "monto": 975300, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F574" },
+  { "area": "A-3 Marketing y ventas", "proyecto": "Desarrollo de relaciones institucionales sólidas", "rubro": "Identificación y Mapeo de Instituciones Clave", "concepto": "Análisis de instituciones del sector público y privado relevantes para Ryse Medica en el ámbito de cirugía de especialidad.", "fecha": "22/10/24", "monto": 983000, "proveedor": "DAHER & LEE ABOGADOS SA DE CV", "factura": "F:403" },
+  { "area": "A-2 Análisis de mercado", "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "rubro": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "concepto": "Proyección de tendencias futuras en la demanda de equipos médicos para hospitales de especialidad.", "fecha": "19/11/24", "monto": 991000, "proveedor": "MEDISULT", "factura": "F:334" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "3. Acondicionamiento y Configuración del Almacén", "concepto": "Configuración y pruebas del sistema WMS para asegurar su operatividad y eficiencia.", "fecha": "25/11/24", "monto": 1021000, "proveedor": "DE ANDA Y CALVILLO PUENTES Y SUPERVIAS", "factura": "F:206" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales", "concepto": "Creación del diseño del layout del almacén, incluyendo el trazado de pasillos y asignación de áreas de almacenamiento.", "fecha": "25/09/24", "monto": 1103000, "proveedor": "DARMESA TECNOLOGIAS", "factura": "F:224" },
+  { "area": "A-5 Operaciones y logística", "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "rubro": "3. Acondicionamiento y Configuración del Almacén", "concepto": "Instalación de estanterías, montacargas y otros equipos de manejo de materiales.", "fecha": "25/11/24", "monto": 1189000, "proveedor": "DE ANDA Y CALVILLO PUENTES Y SUPERVIAS", "factura": "F:204" }
+];
+const ganttProjectData = [
+    { "proyecto": "Evaluación e Implementación de OKRs", "area": "A-1 Dirección ejecutiva", "inicio": "17/09/2024", "fin": "03/12/2024", "monto": 14550272.00 },
+    { "proyecto": "Fomento para el Desarrollo de Líderes dentro de la Empresa", "area": "A-1 Dirección ejecutiva", "inicio": "17/09/2024", "fin": "03/12/2024", "monto": 3950000.00 },
+    { "proyecto": "Capacitación para la Toma de Decisiones Críticas", "area": "A-1 Dirección ejecutiva", "inicio": "17/09/2024", "fin": "13/12/2024", "monto": 13193000.00 },
+    { "proyecto": "Relación con Inversionistas", "area": "A-1 Dirección ejecutiva", "inicio": "17/09/2024", "fin": "13/12/2024", "monto": 5650000.00 },
+    { "proyecto": "Gobierno Corporativo", "area": "A-1 Dirección ejecutiva", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 7895000.00 },
+    { "proyecto": "Análisis de Tendencias en Licitaciones de Equipos Médicos", "area": "A-2 Análisis de mercado", "inicio": "22/10/2024", "fin": "13/12/2024", "monto": 6055000.00 },
+    { "proyecto": "Investigación de Precios", "area": "A-2 Análisis de mercado", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 6270000.00 },
+    { "proyecto": "Desarrollo de relaciones institucionales sólidas", "area": "A-3 Marketing y ventas", "inicio": "22/10/2024", "fin": "13/12/2024", "monto": 8387100.00 },
+    { "proyecto": "Evaluación de Resultados de Licitaciones", "area": "A-3 Marketing y ventas", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 6493500.00 },
+    { "proyecto": "Análisis de la Competencia", "area": "A-4 Desarrollo de productos y servicios", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 4356400.00 },
+    { "proyecto": "Desarrollo de Modelos de Negocio Innovadores", "area": "A-4 Desarrollo de productos y servicios", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 7466430.00 },
+    { "proyecto": "Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad", "area": "A-5 Operaciones y logística", "inicio": "08/08/2024", "fin": "10/10/2024", "monto": 8379950.00 },
+    { "proyecto": "Proyecto para la puesta en marcha del nuevo almacen", "area": "A-5 Operaciones y logística", "inicio": "15/08/2024", "fin": "03/12/2024", "monto": 6123120.00 },
+    { "proyecto": "Proyecto de Optimización del Manejo de Inventarios", "area": "A-5 Operaciones y logística", "inicio": "10/09/2024", "fin": "03/12/2024", "monto": 6186500.00 },
+    { "proyecto": "Gestion de Talento Humano (CDMX, GDL y Torreón)", "area": "A-6 Recursos Humanos", "inicio": "22/10/2024", "fin": "13/12/2024", "monto": 6398500.00 },
+    { "proyecto": "Adaptación a Cambios Organizacionales", "area": "A-6 Recursos Humanos", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 6437500.00 },
+    { "proyecto": "Planificación de Sucesión", "area": "A-6 Recursos Humanos", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 6425200.00 },
+    { "proyecto": "Gestión de Diversidad e Inclusión", "area": "A-6 Recursos Humanos", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 6394600.00 },
+    { "proyecto": "Gestion de l Area de Tesoreria", "area": "A-7 Finanzas", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 6374300.00 },
+    { "proyecto": "Desarrollo y gestión presupuestal", "area": "A-7 Finanzas", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 6599400.00 },
+    { "proyecto": "Análisis de Rentabilidad", "area": "A-7 Finanzas", "inicio": "25/11/2024", "fin": "13/12/2024", "monto": 6698500.00 },
+    { "proyecto": "Planificación Financiera y Proyecciones", "area": "A-7 Finanzas", "inicio": "26/11/2024", "fin": "13/12/2024", "monto": 6968000.00 }
+];
+
+// --- GLOBAL VARIABLES ---
+let chartInstances = {};
+let ganttChartInstance;
+
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', () => {
+    populateInitialFilters();
+    addEventListeners();
+    applyFilters();
+});
+
+function addEventListeners() {
+    document.getElementById('filterArea').addEventListener('change', applyFilters);
+    document.getElementById('filterProyecto').addEventListener('change', applyFilters);
+    document.getElementById('filterProveedor').addEventListener('change', applyFilters);
+    document.getElementById('filterMes').addEventListener('change', applyFilters);
+    document.getElementById('clearFilters').addEventListener('click', clearAllFilters);
+    document.getElementById('exportBtn').addEventListener('click', exportTableToCSV);
+}
+
+// --- FILTER LOGIC ---
+function populateInitialFilters() {
+    const getUniqueSorted = (data, key) => [...new Set(data.map(item => item[key]))].sort();
+    updateDropdown('filterArea', getUniqueSorted(originalData, 'area'), '', '-- Todas las Áreas --');
+    updateDropdown('filterProyecto', getUniqueSorted(originalData, 'proyecto'), '', '-- Todos los Proyectos --');
+    updateDropdown('filterProveedor', getUniqueSorted(originalData, 'proveedor'), '', '-- Todos los Proveedores --');
+    updateDropdown('filterMes', [], '', '-- Todos los Meses --');
+}
+
+function clearAllFilters() {
+    document.getElementById('filterArea').value = "";
+    document.getElementById('filterProyecto').value = "";
+    document.getElementById('filterProveedor').value = "";
+    document.getElementById('filterMes').value = "";
+    applyFilters();
+}
+
+function applyFilters() {
+    // Get current selections
+    let selectedArea = document.getElementById('filterArea').value;
+    let selectedProject = document.getElementById('filterProyecto').value;
+    let selectedProveedor = document.getElementById('filterProveedor').value;
+    let selectedMes = document.getElementById('filterMes').value;
+
+    // --- Cascading Filter Logic ---
+    let relevantData = originalData;
+
+    if (selectedArea) {
+        relevantData = relevantData.filter(item => item.area === selectedArea);
+    }
+    let availableProjects = [...new Set(relevantData.map(item => item.proyecto))].sort();
+    if (!availableProjects.includes(selectedProject)) selectedProject = '';
+    updateDropdown('filterProyecto', availableProjects, selectedProject, '-- Todos los Proyectos --');
+
+    if (selectedProject) {
+        relevantData = relevantData.filter(item => item.proyecto === selectedProject);
+    }
+    let availableProveedores = [...new Set(relevantData.map(item => item.proveedor))].sort();
+    if (!availableProveedores.includes(selectedProveedor)) selectedProveedor = '';
+    updateDropdown('filterProveedor', availableProveedores, selectedProveedor, '-- Todos los Proveedores --');
+
+    if (selectedProveedor) {
+        relevantData = relevantData.filter(item => item.proveedor === selectedProveedor);
+    }
+    const monthMap = new Map();
+    relevantData.forEach(item => {
+        const [, month, year] = item.fecha.split('/');
+        const dateKey = `20${year}-${month.padStart(2, '0')}`;
+        const dateLabel = new Date(dateKey + '-02').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+        if (!monthMap.has(dateKey)) { monthMap.set(dateKey, dateLabel); }
+    });
+    const availableMeses = new Map([...monthMap.entries()].sort());
+    if (!Array.from(availableMeses.keys()).includes(selectedMes)) selectedMes = '';
+    updateMonthDropdown('filterMes', availableMeses, selectedMes, '-- Todos los Meses --');
+
+    // Final filtering for display
+    const finalFilteredData = originalData.filter(item => {
+        const [, month, year] = item.fecha.split('/');
+        const itemDateKey = `20${year}-${month.padStart(2, '0')}`;
+        return (!selectedArea || item.area === selectedArea) &&
+               (!selectedProject || item.proyecto === selectedProject) &&
+               (!selectedProveedor || item.proveedor === selectedProveedor) &&
+               (!selectedMes || itemDateKey === selectedMes);
+    });
+
+    const filteredGanttData = selectedArea ? ganttProjectData.filter(p => p.area === selectedArea) : ganttProjectData;
+
+    updateDashboard(finalFilteredData, filteredGanttData);
+}
+
+// --- RENDERING FUNCTIONS ---
+function updateDashboard(detailData, ganttData) {
+    renderMainKPIs(detailData);
+    renderTimelineChart(detailData);
+    const providerData = prepareChartData(detailData, 'proveedor');
+    renderChart('proveedorChart', 'doughnut', providerData, {
+        plugins: { legend: { position: 'right' } },
+        onClick: (evt, elements) => handleMainChartClick(evt, elements)
+    });
+    renderGanttChart(ganttData);
+    renderDetailTable(detailData);
+}
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+}
+
+function updateDropdown(elementId, optionsArray, currentValue, defaultOptionText) {
+    const select = document.getElementById(elementId);
+    let html = `<option value="">${defaultOptionText}</option>`;
+    html += optionsArray.map(opt => `<option value="${opt}" ${opt === currentValue ? 'selected' : ''}>${opt}</option>`).join('');
+    select.innerHTML = html;
+    select.value = currentValue;
+}
+
+function updateMonthDropdown(elementId, optionsMap, currentValue, defaultOptionText) {
+    const select = document.getElementById(elementId);
+    let html = `<option value="">${defaultOptionText}</option>`;
+    optionsMap.forEach((label, value) => {
+        html += `<option value="${value}" ${value === currentValue ? 'selected' : ''}>${label}</option>`;
+    });
+    select.innerHTML = html;
+    select.value = currentValue;
+}
+
+function renderMainKPIs(data) {
+    const totalMonto = data.reduce((sum, item) => sum + item.monto, 0);
+    const totalConceptos = data.length;
+    const costoPromedio = totalConceptos > 0 ? totalMonto / totalConceptos : 0;
+    const proveedorSummary = data.reduce((acc, item) => {
+        acc[item.proveedor] = (acc[item.proveedor] || 0) + item.monto;
+        return acc;
+    }, {});
+    const proveedorPrincipal = Object.keys(proveedorSummary).length > 0 ? Object.entries(proveedorSummary).sort(([,a],[,b]) => b-a)[0][0] : '-';
+
+    document.getElementById('totalMonto').textContent = formatCurrency(totalMonto);
+    document.getElementById('totalConceptos').textContent = totalConceptos;
+    document.getElementById('costoPromedio').textContent = formatCurrency(costoPromedio);
+    document.getElementById('proveedorPrincipal').textContent = proveedorPrincipal;
+}
+
+function renderDetailTable(data) {
+    const tableBody = document.getElementById('detailTableBody');
+    tableBody.innerHTML = data.length > 0 ? data.map(item => `
+        <tr>
+            <td>${item.area}</td><td>${item.proyecto}</td><td>${item.rubro}</td>
+            <td>${item.concepto}</td><td>${item.fecha}</td><td>${item.proveedor}</td>
+            <td>${formatCurrency(item.monto)}</td>
+        </tr>`).join('') :
+        `<tr><td colspan="7" style="text-align:center; padding: 40px;">No hay conceptos que coincidan con los filtros seleccionados.</td></tr>`;
+}
+
+// --- CHART RENDERING ---
+function renderChart(canvasId, type, data, options) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+    chartInstances[canvasId] = new Chart(ctx, { type, data, options });
+}
+
+function renderTimelineChart(data) {
+    const monthlySummary = data.reduce((acc, item) => {
+        const [, month, year] = item.fecha.split('/');
+        const dateKey = `20${year}-${month.padStart(2, '0')}`;
+        acc[dateKey] = (acc[dateKey] || 0) + item.monto;
+        return acc;
+    }, {});
+    const sortedMonths = Object.entries(monthlySummary).sort((a, b) => a[0].localeCompare(b[0]));
+    renderChart('timelineChart', 'line', {
+        labels: sortedMonths.map(item => new Date(item[0] + '-02').toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })),
+        datasets: [{
+            label: 'Monto Facturado', data: sortedMonths.map(item => item[1]),
+            fill: true, backgroundColor: 'rgba(52, 152, 219, 0.2)', borderColor: 'rgba(52, 152, 219, 1)', tension: 0.1
+        }]
+    }, { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } });
+}
+
+function prepareChartData(data, key) {
+    const summary = data.reduce((acc, item) => {
+        acc[item[key]] = (acc[item[key]] || 0) + item.monto;
+        return acc;
+    }, {});
+    const sortedSummary = Object.entries(summary).sort(([,a],[,b]) => b-a).slice(0, 7);
+    return {
+        labels: sortedSummary.map(item => item[0]),
+        datasets: [{
+            label: 'Monto', data: sortedSummary.map(item => item[1]),
+            backgroundColor: ['#3498db', '#2ecc71', '#e74c3c', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22'],
+            borderColor: '#fff', borderWidth: 2
+        }]
+    };
+}
+
+function handleMainChartClick(evt, elements) {
+    if (elements.length > 0) {
+        const chart = elements[0].chart;
+        const clickedLabel = chart.data.labels[elements[0].index];
+        document.getElementById('filterProveedor').value = clickedLabel;
+        applyFilters();
+    }
+}
+
+function renderGanttChart(data) {
+    const ganttAreaColors = {"A-1 Dirección ejecutiva": '#3498db', "A-2 Análisis de mercado": '#e74c3c', "A-3 Marketing y ventas": '#2ecc71', "A-4 Desarrollo de productos y servicios": '#9b59b6', "A-5 Operaciones y logística": '#f1c40f', "A-6 Recursos Humanos": '#1abc9c', "A-7 Finanzas": '#e67e22'};
+    const parseGanttDate = (dateStr) => { const [d, m, y] = dateStr.split('/'); return new Date(y, m - 1, d); };
+    const sortedData = [...data].sort((a, b) => a.area.localeCompare(b.area) || parseGanttDate(a.inicio) - parseGanttDate(b.inicio));
+    document.getElementById('gantt-chart-parent').style.height = `${Math.max(400, sortedData.length * 35)}px`;
+
+    if (ganttChartInstance) ganttChartInstance.destroy();
+    
+    ganttChartInstance = new Chart(document.getElementById('ganttChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: sortedData.map(p => p.proyecto),
+            datasets: [{
+                data: sortedData.map(p => [parseGanttDate(p.inicio).valueOf(), parseGanttDate(p.fin).valueOf()]),
+                backgroundColor: sortedData.map(p => ganttAreaColors[p.area] || '#cccccc'),
+                barPercentage: 0.7, borderRadius: 3,
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM' }, tooltipFormat: 'DDD' }, min: '2024-07-01', max: '2024-12-31', position: 'top' },
+                x2: { type: 'time', time: { unit: 'month' }, min: '2024-07-01', max: '2024-12-31', position: 'bottom', grid: { drawOnChartArea: false }, ticks: { display: false } },
+                y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { title: (ctx) => ctx[0]?.label || '', label: (ctx) => { const d = sortedData[ctx.dataIndex]; return [`Área: ${d.area}`, `Duración: ${d.inicio} a ${d.fin}`, `Monto: ${formatCurrency(d.monto)}`]; } } }
+            }
+        }
+    });
+}
+
+// --- UTILITIES ---
+function exportTableToCSV() {
+    let csv = [];
+    document.querySelectorAll("#detailTable tr").forEach(row => {
+        const rowData = [];
+        row.querySelectorAll("td, th").forEach(col => {
+            rowData.push(`"${col.innerText.replace(/"/g, '""')}"`);
+        });
+        csv.push(rowData.join(','));
+    });
+    const blob = new Blob(["\uFEFF" + csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "export_dashboard.csv";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+
+</body>
+</html>
+```
