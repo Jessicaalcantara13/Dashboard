@@ -22,12 +22,11 @@
         .filters-container button { padding: 10px 20px; font-size: 14px; border-radius: 5px; border: none; background-color: #e74c3c; color: white; cursor: pointer; height: 39px; }
         .charts-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; margin-bottom: 40px; }
         .chart-wrapper { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-         /* Ajustamos la altura de las gráficas principales para evitar que
-           el contenido se desborde sobre el siguiente bloque. En lugar de
-           fijar la altura del contenedor, asignamos una altura específica al
-           canvas y permitimos que el contenedor se adapte automáticamente */
-        .main-charts .chart-wrapper { height: auto; }
-        .main-charts .chart-wrapper canvas { width: 100%; height: 380px; }
+         /* Mantener un alto fijo evita que la gráfica crezca indefinidamente
+           y se superponga con el siguiente bloque. El canvas ocupa el 100%
+           del contenedor para ajustarse al espacio disponible. */
+        .main-charts .chart-wrapper { height: 400px; }
+        .main-charts .chart-wrapper canvas { width: 100% !important; height: 100% !important; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; word-break: break-word; }
         th { background-color: #3498db; color: white; }
@@ -641,4 +640,3 @@ function exportTableToCSV() {
 
 </body>
 </html>
-```
