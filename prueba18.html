@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Proyectos de Consultoría</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f7fa;
+            --card-bg-color: #ffffff;
+            --text-color: #333;
+            --primary-color: #007bff;
+            --primary-hover-color: #0056b3;
+            --secondary-color: #6c757d;
+            --secondary-hover-color: #5a6268;
+            --border-color: #e0e0e0;
+            --shadow-color: rgba(0, 0, 0, 0.05);
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1em;
+            display: flex;
+            flex-direction: column;
+            gap: 1em;
+        }
+        .dashboard-header {
+            text-align: center;
+            padding-bottom: 1em;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .dashboard-header h1 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1em;
+            padding: 1em;
+            background-color: var(--card-bg-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            align-items: flex-end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5em;
+            flex-grow: 1;
+        }
+        .filter-group label {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .filter-group select {
+            padding: 0.6em;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: white;
+            font-family: var(--font-family);
+        }
+        .kpi-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1em;
+        }
+        .kpi-card {
+            background-color: var(--card-bg-color);
+            padding: 1em;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            border-left: 5px solid var(--primary-color);
+        }
+        .kpi-card h3 {
+            margin: 0 0 0.5em 0;
+            font-size: 1em;
+            color: #555;
+        }
+        .kpi-card p {
+            margin: 0;
+            font-size: 1.8em;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 1em;
+        }
+        .chart-card {
+            background-color: var(--card-bg-color);
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px var(--shadow-color);
+        }
+        .chart-card.full-width {
+            grid-column: 1 / -1;
+        }
+        canvas {
+            width: 100% !important;
+            max-height: 400px;
+        }
+        #timeline-chart-container {
+             max-height: 600px;
+             overflow-y: auto;
+        }
+        #timeline-chart {
+             /* Se elimina la altura mínima fija para controlarla con JavaScript */
+        }
+        .table-container {
+            background-color: var(--card-bg-color);
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            overflow-x: auto;
+        }
+        #detail-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #detail-table th, #detail-table td {
+            padding: 0.8em;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #detail-table thead {
+            background-color: #f8f9fa;
+        }
+        #detail-table th {
+            font-weight: 600;
+        }
+        #export-button {
+            padding: 0.8em 1.5em;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            margin-top: 1em;
+        }
+        #export-button:hover {
+            background-color: var(--primary-hover-color);
+        }
+        
+        #clear-filters-button {
+            padding: 0.6em 1.2em;
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: var(--font-family);
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        #clear-filters-button:hover {
+            background-color: var(--secondary-hover-color);
+        }
+
+
+        @media (max-width: 1024px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 768px) {
+            body { padding: 0.5em; }
+            .controls { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="dashboard-header">
+        <h1>Dashboard de Proyectos de Consultoría</h1>
+    </header>
+
+    <div class="controls">
+        <div class="filter-group">
+            <label for="periodo-select">Periodo</label>
+            <select id="periodo-select">
+                <option value="ambos">Ambos Años</option>
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="area-select">Área</label>
+            <select id="area-select">
+                <option value="todos">Todas</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="proyecto-select">Proyecto Principal</label>
+            <select id="proyecto-select">
+                <option value="todos">Todos</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="mes-select">Mes</label>
+            <select id="mes-select">
+                <option value="todos">Todos</option>
+                <option value="6">Julio</option>
+                <option value="7">Agosto</option>
+                <option value="8">Septiembre</option>
+                <option value="9">Octubre</option>
+                <option value="10">Noviembre</option>
+                <option value="11">Diciembre</option>
+            </select>
+        </div>
+        <button id="clear-filters-button">Borrar Todos los Filtros</button>
+    </div>
+
+    <div class="kpi-container">
+        <div class="kpi-card">
+            <h3>Monto Total Facturado</h3>
+            <p id="kpi-monto-total">$0</p>
+        </div>
+        <div class="kpi-card">
+            <h3>Total de Conceptos</h3>
+            <p id="kpi-total-conceptos">0</p>
+        </div>
+        <div class="kpi-card">
+            <h3>Monto Promedio por Concepto</h3>
+            <p id="kpi-monto-promedio">$0</p>
+        </div>
+        <div class="kpi-card">
+            <h3>Total de Proyectos</h3>
+            <p id="kpi-total-proyectos">0</p>
+        </div>
+    </div>
+
+    <div class="charts-container">
+        <div class="chart-card">
+            <canvas id="facturacion-chart"></canvas>
+        </div>
+        <div class="chart-card">
+            <canvas id="proveedor-chart"></canvas>
+        </div>
+        <div class="chart-card full-width">
+            <div id="timeline-chart-container">
+                 <canvas id="timeline-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <button id="export-button">Exportar a CSV</button>
+        <table id="detail-table">
+            <thead>
+                <tr>
+                    <th>Área</th>
+                    <th>Proyecto Principal</th>
+                    <th>Proveedor (Rubro)</th>
+                    <th>Concepto Facturable</th>
+                    <th>Fecha Factura</th>
+                    <th>Monto sin IVA</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Rows will be inserted by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+<script>
+const data2024 = `
+Área	Proyecto Principal	Rubro	Concepto Facturable	Fecha Factura	Monto sin IVA 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	7. Comunicación de resultados y mejores prácticas a toda la organización 	10/10/2024	 145,242.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	1. Revisión de requisitos de auditoría de los proveedores 	08/08/2024	 193,762.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)	1. Sesión introductoria sobre los principios y beneficios del SGC 	08/08/2024	 175,600.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	5. Monitorear y evaluar la eficacia de las acciones implementadas 	03/10/2024	 193,656.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	6. Evaluación de la reducción de quejas similares 	10/10/2024	 193,656.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	10. Planificación y ejecución de simulacros de auditoría 	12/09/2024	 290,621.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	11. Identificación de áreas de mejora durante los simulacros 	17/09/2024	 175,600.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	11. Definición de objetivos y metas de mejora 	17/09/2024	 193,762.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	14. Revisión periódica de resultados 	30/09/2024	 193,762.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	10. Identificación de oportunidades de mejora 	12/09/2024	 193,762.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	9. Revisión de datos históricos de desempeño 	11/09/2024	 193,800.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)	2. Explicación de las normas y estándares relevantes 	12/08/2024	 193,848.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)	4. Taller sobre liderazgo y compromiso en el SGC 	20/08/2024	 193,848.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Introducción a los OKRs y Sensibilización	Preparación de  un foro de discusión donde la alta dirección pueda plantear dudas, inquietudes y discutir cómo los OKRs podrían aplicarse en el contexto de Ryse Medica.	30/09/2024	 197,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	12. Ajuste de procedimientos y documentación según los resultados 	19/09/2024	 210,500.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Propuesta de Implementación Piloto	Identificación y selección de áreas o departamentos clave donde se pueda implementar el piloto de OKRs.	30/10/2024	 202,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	13. Monitoreo periódico de cumplimiento 	25/09/2024	 320,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	10. Identificación de áreas críticas de mejora 	12/09/2024	 214,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	14. Evaluación continua de procedimientos y documentación 	30/09/2024	 200,100.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)	5. Desarrollo de una matriz de responsabilidades por área responsable	20/08/2024	 234,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	3. Elaboración de planes de acción correctiva (acciones inmediatas) 	25/09/2024	 242,015.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	4. Desarrollo de planes de acción preventiva (acciones a largo plazo) 	30/09/2024	 242,015.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	1. Definición de estándares de calidad 	08/08/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	4. Redacción de políticas de calidad que definan los estándares esperados 	20/08/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	6. Creación de guías y manuales de uso que faciliten la comprensión y aplicación de los estándares 	27/08/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	13. Seguimiento de indicadores de desempeño 	25/09/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	1. Identificar y definir los KPIs que sean relevantes para los objetivos estratégicos y operativos de la empresa 	08/08/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	5. Establecimiento de metodologías y procedimientos para la recolección de datos 	20/08/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	8. Evaluar la efectividad de los KPIs y realizar ajustes necesarios para asegurar su relevancia y eficacia 	02/09/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	9. Análisis de tendencias y patrones en los datos de KPIs 	11/09/2024	 242,169.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	15. Implementación de mejoras continuas basadas en auditorías pasadas 	03/10/2024	 220,200.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	2. Evaluación de la situación actual de la empresa en términos de cumplimiento 	12/08/2024	 242,191.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	3. Desarrollo de un plan de acción para la preparación de auditorías 	15/08/2024	 290,621.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	4. Redacción y actualización de manuales de procedimientos 	20/08/2024	 339,086.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Manejo de Quejas	2. Revisión formulario estándar para el registro de quejas que asegure que toda la información relevante sea capturada de manera uniforme	15/08/2024	 248,710.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Presentación de Resultados y Recomendaciones Finales	Presentación ejecutiva para la alta dirección, resumiendo los hallazgos clave del piloto y las recomendaciones para la adopción completa de OKRs.	03/12/2024	 254,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	12. Desarrollo de estrategias y tácticas de mejora 	19/09/2024	 255,400.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Plan de Capacitación para la Alta Dirección en el Seguimiento del Sistema de Gestión de Calidad (SGC)	3. Presentación de casos de éxito y mejores prácticas 	15/08/2024	 256,700.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Introducción a los OKRs y Sensibilización	Presentación de casos de estudio de empresas que han implementado OKRs, destacando los beneficios alcanzados en términos de alineación estratégica, enfoque y medición de resultados.	23/09/2024	 258,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	7. Revisión interna con los responsables de las áreas de los documentos para asegurar la precisión y completitud 	02/09/2024	 278,900.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	2. Evaluación de Necesidades para el desarrollo del sistema de gestión de calidad 	12/08/2024	 290,617.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	8. Auditoría interna de procesos y sistemas 	02/09/2024	 290,617.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	2. Definición de KPIs específicos, medibles, alcanzables, relevantes y con límite de tiempo (SMART) 	12/08/2024	 290,617.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	7. Monitorear los KPIs regularmente y generar reportes periódicos para la alta dirección 	02/09/2024	 290,617.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	5. Documentación de políticas de calidad 	20/08/2024	 242,191.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	6. Preparación de registros y evidencias necesarias para las auditorías 	27/08/2024	 290,621.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	7. Desarrollo de un programa de capacitación específico 	29/08/2024	 242,191.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	1. Evaluar y analizar cada queja para identificar causas raíz y tendencias 	12/09/2024	 290,671.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Propuesta de Implementación Piloto	Capacitación a los equipos seleccionados en la metodología OKR, asegurando que comprendan cómo establecer, seguir y evaluar sus OKRs.	25/11/2024	 304,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Presentación de Resultados y Recomendaciones Finales	Preparación de un informe detallado sobre los resultados del piloto, incluyendo análisis de desempeño, logros, desafíos, y feedback de los participantes.	03/12/2024	 305,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Evaluación de la Aplicabilidad de OKRs en Ryse Medica	Evaluación de la viabilidad de implementar OKRs en Ryse Medica, incluyendo un análisis de los recursos necesarios, cambios culturales, y herramientas tecnológicas requeridas.	22/10/2024	 307,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Introducción a los OKRs y Sensibilización	Realización de una sesión de presentación sobre qué son los OKRs, su historia, principios básicos	17/09/2024	 312,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	8. Realización de sesiones de formación 	02/09/2024	 242,191.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Monitoreo de Quejas	2. Desarrollo de Planes de Acción Correctiva y Preventiva (CAPA) 	19/09/2024	 339,007.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	3. Planificación inicial y diseño de los documentos necesarios para definir los estándares de calidad 	15/08/2024	 339,065.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Procesos de optimación del SGC	5. Desarrollo de procedimientos detallados para asegurar la implementación efectiva de las políticas de calidad 	20/08/2024	 339,065.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	3. Selección de herramientas y software para el monitoreo de KPIs 	15/08/2024	 339,065.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	4. Desarrollo de plantillas y dashboards para la visualización de KPIs 	20/08/2024	 339,065.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desarrollo de esquema de Key Performance Indicator (KPIs) en la empresa	6. Implementar los KPIs en las operaciones diarias de la empresa y asegurar que todos los involucrados comprendan su importancia y uso 	27/08/2024	 339,065.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Auditorias operativas con proveedores de materiales y equipo	9. Evaluación del personal capacitado 	11/09/2024	 193,762.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Manejo de Quejas	3. Capacitación del personal encargado de recibir las quejas en el uso de los nuevos sistemas y en la atención al cliente	20/08/2024	 347,673.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Manejo de Quejas	5. Capacitación del personal encargado de recibir las quejas en el uso de los formularios y en la atención al cliente 	02/09/2024	 347,673.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Presentación de Resultados y Recomendaciones Finales	Desarrollo de un plan para la implementación completa de OKRs en toda la empresa.	03/12/2024	 348,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Propuesta de Implementación Piloto	Diseño de un plan detallado de implementación, incluyendo la definición de objetivos, resultados clave, plazos, y roles y responsabilidades.	19/11/2024	 351,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	6. Seguimiento y Mejora Continua	Monitoreo regular de indicadores clave de desempeño para identificar áreas de mejora.	03/12/2024	 352,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Desarrollo de Políticas de Abastecimiento Óptimo	Elaboración de Planes de Contingencia	30/10/2024	 352,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Evaluación de la Aplicabilidad de OKRs en Ryse Medica	Facilitación de Taller con la alta dirección para identificar posibles objetivos estratégicos y resultados clave que podrían ser medidos mediante OKRs.	10/10/2024	 353,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Propuesta de Implementación Piloto	Supervisión del progreso del piloto, evaluación del desempeño y ajustes necesarios.	25/11/2024	 358,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Evaluación Final y Plan de Implementación	Presentación de los resultados del programa a la alta dirección, con recomendaciones para futuros planes de desarrollo de liderazgo.	03/12/2024	 375,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Identificación de Líderes Potenciales	Evaluación del desempeño actual de los colaboradores mediante revisiones de desempeño y feedback de superiores.	30/09/2024	 385,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Capacitación y Mejora Continua	Revisión y Ajuste Periódico de Políticas	03/12/2024	 387,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas	Foro de discusión con la dirección sobre los retos actuales que enfrenta Ryse Medica al tomar decisiones críticas y cómo estos pueden abordarse eficazmente.	03/10/2024	 389,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Evaluación Final y Plan de Implementación	Creación de un plan de seguimiento y desarrollo continuo de los líderes, asegurando la sostenibilidad de las capacidades adquiridas.	03/12/2024	 390,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Evaluación y Análisis del Inventario Actual	Identificación y Estrategias para Materiales Obsoletos	03/10/2024	 393,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Identificación de Líderes Potenciales	Identificación y selección de los colaboradores que serán incluidos en el programa de desarrollo de liderazgo.	03/10/2024	 395,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Manejo de Quejas	1. Implementación de los canales de comunicación necesarios para la recepción de quejas	08/08/2024	 398,610.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Desarrollo de Políticas de Abastecimiento Óptimo	Desarrollo de Políticas de Abastecimiento Diferenciado	22/10/2024	 401,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Optimización del Control de Inventarios	Desarrollo de Alertas y Reportes Automatizados	25/11/2024	 401,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Evaluación de la Aplicabilidad de OKRs en Ryse Medica	Evaluación de la estructura organizacional, cultura empresarial, y procesos actuales para identificar cómo los OKRs podrían alinearse con las necesidades estratégicas de la empresa.	03/10/2024	 401,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Capacitación y Mejora Continua	Desarrollo e Implementación de KPIs	03/12/2024	 402,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Capacitación y Mejora Continua	Capacitación del Personal	03/12/2024	 403,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Mentoring y Coaching Individualizado	Seguimiento del progreso de los líderes a través de evaluaciones periódicas y retroalimentación constante para ajustar el plan de desarrollo.	03/12/2024	 405,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Evaluación Final y Plan de Implementación	Realización de una evaluación integral de los resultados del programa, midiendo el desarrollo de habilidades y el desempeño de los nuevos líderes.	03/12/2024	 405,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas	Análisis de casos de éxito de empresas que han tomado decisiones críticas, como grandes inversiones o alianzas estratégicas, destacando los beneficios logrados y las lecciones aprendidas.	30/09/2024	 407,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Presentación de Resultados y Recomendaciones	Propuesta de un plan de implementación continua de las herramientas y métodos desarrollados, asegurando que la dirección mantenga las mejores prácticas para la toma de decisiones críticas a largo plazo.	13/12/2024	 410,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Capacitación en Comunicación con Inversionistas	Desarrollo de habilidades para responder a preguntas difíciles de los inversionistas, asegurando una comunicación coherente y alineada con la estrategia de la empresa.	03/10/2024	 410,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Estrategia para la Búsqueda de Nuevos Inversionistas	Desarrollo de un plan de seguimiento estructurado para asegurar que las relaciones con nuevos inversionistas se mantengan y se avancen hacia el cierre de acuerdos de inversión.	13/12/2024	 425,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Identificación de Líderes Potenciales	Establecimiento de criterios clave para la selección de líderes potenciales, como habilidades de comunicación, inteligencia emocional, capacidad para resolver problemas y manejo de equipos.	17/09/2024	 425,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Mentoring y Coaching Individualizado	Programa de mentoring con líderes más experimentados dentro de la empresa para proporcionar una guía directa y práctica.	25/11/2024	 430,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Fomento de la Innovación y Creatividad	Formación de equipos multidisciplinarios enfocados en el desarrollo de proyectos innovadores dentro de la empresa.	03/12/2024	 430,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Presentación de Resultados y Recomendaciones	Realización de una presentación ejecutiva para resumir los hallazgos clave y definir los próximos pasos estratégicos para la toma de decisiones críticas dentro de la empresa.	03/12/2024	 431,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Mentoring y Coaching Individualizado	Realización de sesiones individuales para el desarrollo de habilidades específicas, identificando áreas de mejora y fortaleciendo puntos clave.	25/11/2024	 445,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	6. Seguimiento y Mejora Continua	Ejecución de auditorías internas para asegurar el cumplimiento de estándares y procedimientos.	03/12/2024	 448,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Desarrollo de Habilidades Estratégicas	Desarrollo de habilidades en la gestión de proyectos clave, incluyendo la planificación, ejecución y seguimiento de resultados.	19/11/2024	 450,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Desarrollo de Políticas de Abastecimiento Óptimo	Definición de Niveles de Reorden y Políticas de Stock	10/10/2024	 451,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Evaluación y Análisis del Inventario Actual	Implementación del Análisis ABC	10/09/2024	 452,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Optimización del Control de Inventarios	Optimización de Procesos de Compras y Almacenamiento	25/11/2024	 452,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Evaluación y Análisis del Inventario Actual	Evaluación de la Rotación de Inventarios	17/09/2024	 453,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	4. Capacitación del Personal	Creación de programas de capacitación específicos para el personal del almacén.	12/09/2024	 458,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Desarrollo de Habilidades Estratégicas	Talleres enfocados en la comprensión del negocio desde una perspectiva más amplia, fomentando una visión empresarial integral.	19/11/2024	 460,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Fomento de la Innovación y Creatividad	Desarrollo de la creatividad en la solución de problemas complejos a través de ejercicios prácticos y estudios de caso.	03/12/2024	 460,000.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis e Interpretación de Resultados de Tendencias	Desarrollo de propuestas estratégicas para mejorar la competitividad de Ryse Medica en futuras licitaciones, basadas en los resultados analizados.	13/12/2024	 464,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Capacitación en Comunicación con Inversionistas	Capacitación para presentar informes operativos de manera que resalten los logros clave y los planes estratégicos, sin dejar de abordar los riesgos y las áreas de mejora.	30/09/2024	 465,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Capacitación en Habilidades de Liderazgo	Desarrollo de habilidades para la toma de decisiones críticas y la resolución efectiva de conflictos dentro del equipo.	22/10/2024	 470,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Estrategia para la Búsqueda de Nuevos Inversionistas	Capacitación en las mejores prácticas para iniciar contactos con nuevos inversionistas, destacando los puntos clave de la propuesta de valor de Ryse Medica.	03/12/2024	 475,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Evaluación de Flujos de Caja y Liquidez	Revisión de las políticas de liquidez para asegurar disponibilidad de fondos en momentos clave.	25/11/2024	 475,600.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Reporte de Gestión y Sostenibilidad de Tesorería	Presentación de resultados y estrategias a la alta dirección, destacando el plan de liquidez y oportunidades de inversión.	13/12/2024	 475,600.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Elaboración de Informes Financieros y Operativos	Creación de plantillas estandarizadas para presentar de forma clara los logros operativos, métricas clave y futuros objetivos.	22/10/2024	 480,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Desarrollo de Habilidades Estratégicas	Entrenamiento en la creación de estrategias a largo plazo, gestión de recursos y anticipación de cambios en el entorno empresarial.	04/11/2024	 480,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Fomento de la Innovación y Creatividad	Capacitación en metodologías de innovación, como Design Thinking, para generar soluciones innovadoras.	03/12/2024	 485,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Presentación de Resultados y Recomendaciones	Preparación de un informe detallado con los resultados de las capacitaciones, análisis de feedback del equipo directivo y recomendaciones para la implementación continua de las herramientas.	25/11/2024	 489,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Capacitación en Toma de Decisiones Basadas en Datos y KPIs	Realización de simulaciones de escenarios donde los KPIs son el factor principal para evaluar el impacto de decisiones estratégicas, tales como expansiones, inversiones y nuevos mercados.	19/11/2024	 495,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Capacitación en Habilidades de Liderazgo	Formación en gestión de equipos de trabajo, incluyendo delegación de responsabilidades, motivación y seguimiento.	22/10/2024	 495,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Manejo de Quejas	4. Configuración e implementación de un sistema centralizado para registrar y gestionar todas las quejas recibidas	27/08/2024	 495,180.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	4. Capacitación del Personal	Capacitación del personal en el uso de equipos de manejo de materiales y en la operación del almacén según el nuevo layout.	03/10/2024	 496,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	6. Seguimiento y Mejora Continua	Implementación de mejoras continuas basadas en los resultados de las auditorías y el análisis de datos.	03/12/2024	 497,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Evaluación y Análisis del Inventario Actual	Diagnóstico y Clasificación del Inventario	10/09/2024	 502,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	4. Capacitación del Personal	Capacitación del personal en el uso del sistema de gestión de almacenes.	22/10/2024	 503,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Presentaciones Estratégicas para Inversionistas	Formación en técnicas de presentación efectivas, que permitan a la dirección transmitir confianza y profesionalismo durante las reuniones con inversionistas.	19/11/2024	 510,000.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Capacitación en Habilidades de Liderazgo	Capacitación en habilidades de comunicación asertiva y escucha activa para mejorar la interacción con los equipos.	10/10/2024	 510,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Optimización de la Gestión de Liquidez	Implementación de herramientas de monitoreo de liquidez para una revisión continua.	25/11/2024	 513,200.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas	Capacitación en la evaluación y selección de socios estratégicos, utilizando criterios clave como sinergias operativas, integración cultural y riesgos de mercado.	22/10/2024	 514,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Evaluación de Flujos de Caja y Liquidez	Análisis detallado de los flujos de caja actuales para determinar patrones y necesidades de liquidez.	25/11/2024	 514,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Optimización de la Gestión de Liquidez	Diseño de estrategias de optimización de tesorería, asegurando un balance adecuado entre liquidez y rendimiento.	25/11/2024	 545,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Presentaciones Estratégicas para Inversionistas	Ejercicios prácticos donde la dirección presente informes y responda preguntas simuladas por expertos, recibiendo retroalimentación sobre su desempeño.	19/11/2024	 550,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Capacitación en Toma de Decisiones Basadas en Datos y KPIs	Capacitación en herramientas de análisis de datos (BI, dashboards) que permitan a la dirección tener visibilidad en tiempo real sobre los datos críticos para la toma de decisiones.	19/11/2024	 552,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Estrategia para la Búsqueda de Nuevos Inversionistas	Desarrollo de una estrategia de segmentación para identificar inversionistas potenciales que estén alineados con la visión y misión de Ryse Medica.	25/11/2024	 565,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Estrategias de Inversión para Excedentes de Efectivo	Desarrollo de un portafolio de inversión basado en criterios de seguridad y rendimiento.	03/12/2024	 565,400.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Elaboración de Informes Financieros y Operativos	Capacitación en cómo evaluar y presentar los resultados operativos, integrando métricas clave de desempeño (KPIs) para facilitar el análisis por parte de los inversionistas.	22/10/2024	 570,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas	Formación específica en técnicas de identificación, cuantificación y mitigación de riesgos en decisiones críticas, utilizando matrices de riesgo y simulaciones de escenarios.	22/10/2024	 571,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Capacitación en Toma de Decisiones Basadas en Datos y KPIs	Taller para identificar los KPIs más relevantes para el éxito de Ryse Medica en decisiones clave, como expansión a nuevos mercados o grandes inversiones.	04/11/2024	 587,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Sensibilización y Fundamentos en la Toma de Decisiones Estratégicas	Introducción a los factores clave que influyen en la toma de decisiones estratégicas de alto impacto, enfocándose en análisis de riesgo, retorno de la inversión (ROI) y escenarios.	17/09/2024	 590,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Capacitación en Comunicación con Inversionistas	Formación sobre cómo transmitir información financiera de manera clara y concisa, enfocándose en temas como el rendimiento, la estabilidad financiera y las proyecciones futuras.	17/09/2024	 595,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	5. Implementación y Puesta en Marcha	Realización de ajustes operativos y organizativos según los resultados de la monitorización inicial.	03/12/2024	 597,000.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Optimización del Control de Inventarios	Implementación de Sistema de Gestión de Inventarios	19/11/2024	 601,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	5. Implementación y Puesta en Marcha	Monitoreo de los principales indicadores de rendimiento durante la fase inicial de operaciones.	25/11/2024	 608,000.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Elaboración de Informes Financieros y Operativos	Formación en la preparación de informes financieros que resalten el rendimiento de la empresa, centrándose en los indicadores clave como EBITDA, crecimiento y márgenes operativos.	10/10/2024	 610,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Estrategias de Inversión para Excedentes de Efectivo	Identificación de oportunidades de inversión seguras y rentables para los excedentes de tesorería.	03/12/2024	 612,500.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Presentaciones Estratégicas para Inversionistas	Creación de un formato efectivo de presentación que destaque los principales hitos financieros y operativos de la empresa, además de los objetivos estratégicos.	04/11/2024	 615,000.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Análisis y Definición del Perfil del Talento	Desarrollo de perfiles de competencias y habilidades requeridas por área.	04/11/2024	 619,000.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Desarrollo de Herramientas y Métodos para Evaluación de Decisiones Críticas	Creación de plantillas y modelos financieros para evaluar inversiones, incluyendo análisis de costo-beneficio, flujo de caja descontado (DCF), y evaluación de sensibilidad.	10/10/2024	 620,000.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Evaluación de Relaciones Institucionales y Mejora Continua	Revisión de indicadores de éxito y ajuste de la estrategia de relacionamiento según resultados.	13/12/2024	 623,450.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Estrategias de Atracción de Talento	Identificación de socios estratégicos en instituciones educativas y bolsas de trabajo locales.	19/11/2024	 637,230.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Reportes y Análisis de Eficacia Presupuestal	Revisión y optimización de los límites y procesos presupuestales en función de los resultados de la implementación inicial.	13/12/2024	 640,320.00 
+A-7 Finanzas	Análisis de Rentabilidad	Reporte y Recomendaciones para Incrementar Rentabilidad	Presentación ejecutiva a la alta dirección sobre las recomendaciones y estrategias sugeridas.	13/12/2024	 650,500.00 
+A-7 Finanzas	Análisis de Rentabilidad	Análisis de Costos y Márgenes Operativos Actuales	Evaluación de los márgenes operativos actuales y comparación con benchmarks de la industria.	25/11/2024	 654,000.00 
+A-7 Finanzas	Gestion de l Area de Tesoreria	Reporte de Gestión y Sostenibilidad de Tesorería	Informe de gestión de tesorería y recomendaciones de sostenibilidad.	13/12/2024	 655,100.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Diagnóstico del Entorno Organizacional	Evaluación de la capacidad actual de la organización para manejar cambios en regiones y tecnologías.	26/11/2024	 680,200.00 
+A-6 Recursos Humanos	Planificación de Sucesión	 Identificación de Roles Críticos	Análisis organizacional para identificar roles clave y críticos en las operaciones de Ciudad de México y Guadalajara.	26/11/2024	 680,500.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Evaluación de la Situación Financiera Actual	Identificación de áreas de riesgo financiero y oportunidades de optimización.	26/11/2024	 680,900.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Análisis y Definición del Perfil del Talento	Análisis de necesidades de talento por región y definición de perfiles estratégicos.	22/10/2024	 682,550.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	1. Revisión del Proyecto y Ajustes Necesarios	Identificación de desviaciones respecto al plan original y recomendación de ajustes.	27/08/2024	 683,000.00 
+A-2 Análisis de mercado	Investigación de Precios	Análisis de Elasticidad de Precios	Estudio sobre la sensibilidad del cliente ante cambios en precios de productos y servicios clave.	26/11/2024	 685,700.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Identificación de Competidores Clave	Clasificación de competidores según participación de mercado y relevancia estratégica.	26/11/2024	 685,900.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Diagnóstico de Cumplimiento en Gobierno Corporativo	Evaluación del cumplimiento actual de normativas y prácticas de gobierno corporativo.	26/11/2024	 695,800.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Reportes y Análisis de Eficacia Presupuestal	Generación de reportes mensuales de desempeño presupuestal, con análisis de cumplimiento por rubro.	13/12/2024	 703,200.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Diagnóstico Organizacional de Diversidad e Inclusión	Evaluación de la situación actual en términos de diversidad e inclusión en la organización.	25/11/2024	 705,600.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	 Análisis de Desempeño de Propuestas	Evaluación del desempeño comparativo frente a competidores en licitaciones específicas.	25/11/2024	 710,400.00 
+A-6 Recursos Humanos	Planificación de Sucesión	 Identificación de Roles Críticos	Evaluación de competencias necesarias para los roles clave identificados.	26/11/2024	 710,400.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Diagnóstico del Entorno Organizacional	Identificación de barreras al cambio organizacional en áreas clave.	26/11/2024	 715,800.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Programas de Desarrollo de Talento	 Implementación de programas de mentoría y coaching para el desarrollo de líderes internos.	25/11/2024	 719,800.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Evaluación de la Situación Financiera Actual	Análisis del estado financiero actual de la empresa, incluyendo ingresos, costos y estructura de deuda.	26/11/2024	 720,400.00 
+A-2 Análisis de mercado	Investigación de Precios	Análisis de Elasticidad de Precios	Identificación de puntos de precio óptimos según segmentos de mercado.	26/11/2024	 720,500.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Desarrollo de Estrategias de Gestión del Cambio	Creación de un plan de comunicación interna para apoyar la implementación de cambios.	26/11/2024	 720,600.00 
+A-7 Finanzas	Análisis de Rentabilidad	Identificación de Áreas de Optimización de Costos	Desarrollo de un plan de reducción de costos en áreas clave, alineado con los objetivos estratégicos.	25/11/2024	 721,000.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Diagnóstico de Cumplimiento en Gobierno Corporativo	Identificación de brechas en las prácticas de transparencia y responsabilidad corporativa.	26/11/2024	 725,600.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Identificación de Competidores Clave	Investigación de competidores directos e indirectos en los mercados objetivo de Ryse Medica.	26/11/2024	 725,800.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Análisis y Definición de Límites Presupuestales	Definición de límites presupuestales mensuales para cada rubro de egreso, considerando la línea base y objetivos de eficiencia.	25/11/2024	 732,000.00 
+A-7 Finanzas	Análisis de Rentabilidad	Análisis de Costos y Márgenes Operativos Actuales	Recopilación y análisis de datos de costos directos e indirectos asociados a productos y servicios clave.	25/11/2024	 732,000.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Estrategias de Atracción de Talento	Diseño de campañas de atracción de talento para las regiones objetivo, utilizando canales digitales y tradicionales.	19/11/2024	 739,500.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Estrategia de Relacionamiento Institucional	Propuesta de iniciativas conjuntas con instituciones públicas y privadas para optimizar los servicios integrales en cirugía de especialidad.	19/11/2024	 741,000.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Evaluación de Relaciones Institucionales y Mejora Continua	Evaluación del impacto de las relaciones institucionales desarrolladas y propuestas de mejora continua.	13/12/2024	 743,500.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	 Análisis de Desempeño de Propuestas	Recopilación y análisis de datos de licitaciones recentes para identificar factores clave de éxito.	25/11/2024	 745,300.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Creación de un Sistema de Monitoreo Presupuestal	Capacitación del personal en el uso del sistema y en la interpretación de los informes de seguimiento presupuestal.	25/11/2024	 745,600.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Ajustes a los planes de desarrollo y retención basados en los resultados obtenidos y el feedback de los empleados.	13/12/2024	 746,300.00 
+A-2 Análisis de mercado	Investigación de Precios	Benchmarking de Precios Competitivos	Análisis comparativo de precios con competidores directos e indirectos en el mercado.	26/11/2024	 750,400.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Desarrollo de un Plan de Sucesión	Identificación y preparación de candidatos internos para roles de sucesión.	03/12/2024	 755,600.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Programas de Desarrollo de Talento	Creación de programas de formación y desarrollo para los empleados clave, con enfoque en habilidades técnicas y de liderazgo.	25/11/2024	 764,300.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Análisis de Mercado y Viabilidad de Modelos Innovadores	Análisis de benchmarking con empresas internacionales que utilizan modelos de negocio similares.	25/11/2024	 765,000.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Evaluación de Estrategias y Fortalezas	Identificación de las fortalezas y ventajas competitivas más destacadas de los principales actores del mercado.	26/11/2024	 765,700.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Desarrollo de Escenarios Financieros	Proyección de escenarios operativos basados en estrategias de expansión y optimización.	03/12/2024	 765,800.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Investigación de Licitaciones Anteriores (3 años)	Análisis de patrones y tendencias en compras de equipos médicos.	22/10/2024	 769,000.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Desarrollo de un Plan de Sucesión	Creación de un plan de sucesión que detalle procesos y criterios para la transición en roles críticos.	26/11/2024	 780,300.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Desarrollo de Estrategias de Gestión del Cambio	Diseño de estrategias para manejar resistencias al cambio y fomentar una cultura de adaptación.	26/11/2024	 780,400.00 
+A-7 Finanzas	Análisis de Rentabilidad	Revisión y Optimización de Precios	Desarrollo de una estrategia de precios óptima para maximizar la rentabilidad y competitividad.	03/12/2024	 784,300.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Diagnóstico Organizacional de Diversidad e Inclusión	Análisis comparativo con estándares internacionales y mejores prácticas en diversidad e inclusión.	25/11/2024	 785,200.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Análisis y Definición de Límites Presupuestales	Análisis histórico de gastos y compras	25/11/2024	 786,400.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Identificación de Áreas de Mejora	Desarrollo de estrategias para mejorar la puntuación en futuras licitaciones.	25/11/2024	 790,200.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Desarrollo de Políticas de Buen Gobierno	 Creación de un manual de gobierno corporativo alineado con normativas locales e internacionales.	03/12/2024	 790,200.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Evaluación de Estrategias y Fortalezas	Análisis de estrategias comerciales y operativas utilizadas por los competidores clave.	26/11/2024	 790,400.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Desarrollo de Políticas de Diversidad e Inclusión	Creación de un manual operativo para implementar las políticas de inclusión.	13/12/2024	 790,800.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Implementación de Programas de Relacionamiento	Planificación y ejecución de reuniones estratégicas con instituciones clave para fortalecer las relaciones y presentar propuestas de colaboración.	19/11/2024	 793,000.00 
+A-2 Análisis de mercado	Investigación de Precios	Benchmarking de Precios Competitivos	Evaluación de estrategias de precios utilizadas por competidores líderes.	26/11/2024	 795,300.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	5. Implementación y Puesta en Marcha	Supervisión del proceso de traslado de inventario al nuevo almacén.	19/11/2024	 803,000.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Desarrollo de Escenarios Financieros	Creación de escenarios financieros considerando variables económicas clave como inflación, tasas de interés y tipo de cambio.	26/11/2024	 805,200.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Desarrollo de Políticas de Buen Gobierno	Diseño de políticas y procedimientos para fortalecer la gobernanza corporativa.	26/11/2024	 805,400.00 
+A-7 Finanzas	Análisis de Rentabilidad	Identificación de Áreas de Optimización de Costos	Análisis de áreas de oportunidad para reducir costos sin afectar la calidad del servicio.	25/11/2024	 806,700.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Desarrollo de Políticas de Diversidad e Inclusión	Diseño de políticas organizacionales para fomentar la diversidad y el respeto por las diferencias.	03/12/2024	 810,400.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Análisis de Debilidades y Áreas de Mejora	Desarrollo de un plan de acción para aprovechar las debilidades de los competidores en beneficio de Ryse Medica.	13/12/2024	 810,600.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Programas de Desarrollo y Capacitación	Implementación de programas de desarrollo para preparar a los candidatos seleccionados.	03/12/2024	 810,700.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales	Colocación de etiquetas y mapas de ubicación en todo el almacén para facilitar la identificación de equipos e instrumentales.	22/10/2024	 811,000.00 
+A-2 Análisis de mercado	Investigación de Precios	Determinación de la Estructura de Precios Óptima	Modelado de estructuras de precios para maximizar el valor percibido y las ventas.	03/12/2024	 815,900.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Implementación de Controles y Procesos Presupuestales	Evaluación de los movimientos mensuales y comparación con los límites establecidos, identificando desviaciones y áreas de ajuste.	03/12/2024	 817,600.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Estrategias de Retención y Bienestar del Talento	Desarrollo de estrategias de retención de talento, incluyendo planes de compensación competitiva y programas de bienestar.	03/12/2024	 819,450.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Recomendaciones Estratégicas para Participación en Licitaciones	Capacitación interna para equipos de ventas y licitaciones sobre las nuevas tendencias.	03/12/2024	 820,000.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Análisis de Mercado y Viabilidad de Modelos Innovadores	Investigación de mercado para evaluar la demanda y viabilidad de modelos de negocio innovadores (leasing, suscripción, asociaciones público-privadas).	25/11/2024	 820,000.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Capacitación y Sensibilización en Gobierno Corporativo	Desarrollo de programas de capacitación para la alta dirección y mandos medios sobre buenas prácticas de gobernanza.	03/12/2024	 820,300.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Análisis de Debilidades y Áreas de Mejora	Evaluación de las debilidades y amenazas que enfrentan los competidores en el mercado.	03/12/2024	 830,200.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Programas de Desarrollo y Capacitación	Evaluación y ajuste de programas de capacitación según el desempeño de los candidatos.	13/12/2024	 830,200.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Desarrollo de Planes Financieros a Largo Plazo	Diseño de planes financieros que consideren los escenarios proyectados y las metas estratégicas de la empresa.	03/12/2024	 830,300.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Identificación de Áreas de Mejora	Análisis de debilidades en las propuestas presentadas, con enfoque en criterios de evaluación utilizados por los clientes.	25/11/2024	 830,700.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Estrategia de Relacionamiento Institucional	Desarrollo de una estrategia de relacionamiento con instituciones clave, enfocada en fortalecer las alianzas y abrir oportunidades de colaboración.	19/11/2024	 833,000.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Capacitación y Desarrollo de Competencias	Diseño de programas de capacitación para preparar a los empleados para nuevas tecnologías y procesos.	13/12/2024	 835,300.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Implementación de Controles y Procesos Presupuestales	Implementación de procesos de autorización y control de egresos.	03/12/2024	 836,000.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Investigación de Licitaciones Anteriores (3 años)	Recopilación de datos de licitaciones públicas de equipos médicos en hospitales de especialidad durante los últimos tres años.	22/10/2024	 840,000.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Programas de Capacitación y Sensibilización	Desarrollo de programas de sensibilización para empleados sobre temas de diversidad e inclusión.	13/12/2024	 840,300.00 
+A-2 Análisis de mercado	Investigación de Precios	Determinación de la Estructura de Precios Óptima	Desarrollo de recomendaciones para implementar cambios en la estrategia de precios.	13/12/2024	 840,800.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis e Interpretación de Resultados de Tendencias	Interpretación de datos y análisis de las implicaciones de las tendencias en las decisiones de Ryse Medica.	13/12/2024	 841,000.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Estrategias de Retención y Bienestar del Talento	Creación de un plan de carrera y desarrollo personalizado para empleados clave.	13/12/2024	 842,700.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Desarrollo de Planes Financieros a Largo Plazo	Recomendaciones para optimizar el manejo de recursos financieros a largo plazo.	13/12/2024	 845,500.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Identificación y Mapeo de Instituciones Clave	Identificación de tomadores de decisiones en hospitales de especialidad y entidades gubernamentales.	04/11/2024	 850,000.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis de Requisitos de Licitaciones Actuales	Análisis de las oportunidades de mejora y optimización en las ofertas de Ryse Medica.	19/11/2024	 850,100.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	1. Revisión del Proyecto y Ajustes Necesarios	Revisión y actualización del plan maestro para alinearse con los resultados de la auditoría.	12/09/2024	 853,000.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Capacitación y Sensibilización en Gobierno Corporativo	Implementación de talleres de transparencia y ética corporativa.	13/12/2024	 860,500.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Programas de Capacitación y Sensibilización	Capacitación a líderes y mandos medios sobre prácticas inclusivas en la gestión de equipos.	13/12/2024	 860,900.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Creación de un Sistema de Monitoreo Presupuestal	Diseño de un sistema de monitoreo de presupuesto para el seguimiento mensual de gastos y compras.	25/11/2024	 862,000.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Estrategias de Alianzas y Asociaciones Público-Privadas	Propuesta de alianzas estratégicas con fabricantes y proveedores de tecnología médica para respaldar los nuevos modelos de negocio.	13/12/2024	 865,000.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Capacitación y Desarrollo de Competencias	Implementación de talleres de adaptación al cambio para líderes y mandos medios.	13/12/2024	 865,000.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Informe y Recomendaciones Estratégicas	Presentación ejecutiva de los resultados del análisis a la alta dirección.	13/12/2024	 870,300.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Implementación y Monitoreo de Proyecciones	Ajuste de planes financieros basados en el desempeño real y cambios en el entorno económico.	13/12/2024	 870,600.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Diseño de Esquemas de Negocio Innovadores	Creación de un modelo de leasing para equipos médicos, ajustado a las necesidades de hospitales públicos y privados.	03/12/2024	 880,000.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Monitoreo y Evaluación de Impacto	Evaluación del impacto y ajuste de las políticas y programas según resultados obtenidos.	13/12/2024	 880,500.00 
+A-2 Análisis de mercado	Investigación de Precios	Evaluación y Ajustes de Estrategias de Precios	Ajustes y refinamiento de la estrategia de precios basada en simulaciones.	13/12/2024	 880,600.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Desarrollo de Alianzas Estratégicas a Largo Plazo	Creación de planes de alianzas estratégicas a largo plazo con hospitales y entidades gubernamentales, asegurando la permanencia de las relaciones.	03/12/2024	 882,000.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Monitoreo y Mejora Continua	Ajuste de políticas y procedimientos basados en los resultados del monitoreo y mejores prácticas.	13/12/2024	 890,300.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Monitoreo y Evaluación del Cambio	Revisión y ajuste de estrategias según resultados obtenidos.	13/12/2024	 890,400.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Revisión de Procedimientos Internos	Evaluación de los procesos internos de preparación de licitaciones para identificar eficiencias operativas.	03/12/2024	 890,600.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Revisión de Procedimientos Internos	Propuesta de mejoras en los procedimientos internos para optimizar tiempos y calidad de las propuestas.	13/12/2024	 890,600.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Diseño de Esquemas de Negocio Innovadores	Desarrollo de un esquema de suscripción para servicios integrales de cirugía, con paquetes personalizados por tipo de especialidad.	13/12/2024	 892,000.00 
+A-7 Finanzas	Análisis de Rentabilidad	Revisión y Optimización de Precios	Análisis de precios actuales y su impacto en la rentabilidad de productos y servicios.	03/12/2024	 893,500.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Implementación y Evaluación de Prototipos	Evaluación del impacto esperado en la rentabilidad y eficiencia operativa mediante simulaciones de los modelos propuestos.	13/12/2024	 894,000.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Monitoreo y Ajustes del Plan de Sucesión	Ajuste del plan de sucesión basado en cambios organizacionales y resultados de monitoreo.	13/12/2024	 894,500.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Informe y Recomendaciones Estratégicas	Elaboración de un informe detallado con hallazgos clave y recomendaciones para fortalecer la posición de Ryse Medica.	13/12/2024	 895,400.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX, GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Evaluación continua de la efectividad de las estrategias de atracción, desarrollo y retención de talento.	13/12/2024	 895,600.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales	Integración de la asignación de ubicaciones en el sistema de gestión de almacenes.	10/10/2024	 897,000.00 
+A-2 Análisis de mercado	Investigación de Precios	Evaluación y Ajustes de Estrategias de Precios	Evaluación del impacto financiero de las estructuras de precios propuestas.	13/12/2024	 905,400.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Monitoreo y Mejora Continua	Implementación de un sistema de monitoreo para evaluar la efectividad de las políticas de gobierno corporativo.	13/12/2024	 905,400.00 
+A-7 Finanzas	Planificación Financiera y Proyecciones	Implementación y Monitoreo de Proyecciones	Implementación de herramientas para monitorear el desempeño financiero frente a los planes proyectados.	13/12/2024	 906,500.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Informe y Presentación de Resultados	Presentación ejecutiva del informe y discusión de estrategias con la alta dirección.	13/12/2024	 910,200.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Monitoreo y Evaluación del Cambio	Monitoreo del progreso de la implementación de cambios y evaluación de su impacto en la organización.	13/12/2024	 910,800.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis de Requisitos de Licitaciones Actuales	Evaluación de los requisitos técnicos y financieros de las licitaciones actuales en hospitales de especialidad.	04/11/2024	 912,000.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Implementación y Evaluación de Prototipos	Diseño de prototipos financieros y operativos para validar los modelos desarrollados.	13/12/2024	 912,000.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Monitoreo y Evaluación de Impacto	Diseño de indicadores clave para medir el impacto de las políticas de diversidad e inclusión.	13/12/2024	 925,700.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	3. Acondicionamiento y Configuración del Almacén	Ejecución de pruebas operativas para asegurar que todos los sistemas y procesos funcionen correctamente.	25/11/2024	 927,000.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Informe y Presentación de Resultados	Elaboración de un informe con resultados del análisis y recomendaciones específicas para futuras licitaciones.	13/12/2024	 930,500.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis de innovaciones tecnológicas esperadas en las licitaciones.	25/11/2024	 937,000.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Estrategias de Alianzas y Asociaciones Público-Privadas	Identificación de oportunidades para asociaciones público-privadas en hospitales de especialidad.	13/12/2024	 940,000.00 
+A-7 Finanzas	Análisis de Rentabilidad	Reporte y Recomendaciones para Incrementar Rentabilidad	Elaboración de un reporte final con recomendaciones detalladas para mejorar la rentabilidad a través de costos y precios optimizados.	13/12/2024	 944,500.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	1. Revisión del Proyecto y Ajustes Necesarios	Evaluación completa del estado actual del proyecto del nuevo almacen de la empresa, incluyendo visitas al sitio y reuniones con el equipo de proyecto.	15/08/2024	 947,000.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Recomendaciones Estratégicas para Participación en Licitaciones	Desarrollo de recomendaciones estratégicas basadas en el análisis de tendencias y proyecciones.	03/12/2024	 963,000.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Implementación de Programas de Relacionamiento	Seguimiento de las iniciativas y negociaciones para el cierre de acuerdos estratégicos.	25/11/2024	 965,000.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Desarrollo de Alianzas Estratégicas a Largo Plazo	 Propuesta de protocolos de colaboración institucional que fortalezcan la posición de Ryse Medica como líder en cirugía de especialidad.	03/12/2024	 966,000.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Monitoreo y Ajustes del Plan de Sucesión	Monitoreo continuo del plan de sucesión para garantizar su alineación con los objetivos estratégicos.	13/12/2024	 975,300.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Identificación y Mapeo de Instituciones Clave	Análisis de instituciones del sector público y privado relevantes para Ryse Medica en el ámbito de cirugía de especialidad.	22/10/2024	 983,000.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Análisis de Tendencias en Licitaciones de Equipos Médicos	Proyección de tendencias futuras en la demanda de equipos médicos para hospitales de especialidad.	19/11/2024	 991,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	3. Acondicionamiento y Configuración del Almacén	Configuración y pruebas del sistema WMS para asegurar su operatividad y eficiencia.	25/11/2024	 1,021,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	2. Trazado de Pasillos y Ubicación de Equipos e Instrumentales	Creación del diseño del layout del almacén, incluyendo el trazado de pasillos y asignación de áreas de almacenamiento.	25/09/2024	 1,103,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	3. Acondicionamiento y Configuración del Almacén	Instalación de estanterías, montacargas y otros equipos de manejo de materiales.	25/11/2024	 1,189,000.00 
+`;
+
+const data2025 = `
+Área	Proyecto Principal	Rubro	Concepto Facturable	Fecha Factura	Monto sin IVA 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Formalización de los Protocolos de Calidad y Gobernanza de Datos que alimentan el Sistema de KPIs.	18/07/2025	 400,440.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Finalización operativa y consolidación del modelo de reportes financieros y operativos	Laboratorio Práctico para la Construcción de Reportes de Valor y Desempeño para el Consejo de Administración.	18/07/2025	 173,120.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Regularización del proceso de detección de talento y proyección de líderes futuros	Modelo Predictivo para la Detección y Desarrollo Acelerado de Talento de Alto Potencial.	18/07/2025	 165,240.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Verificación de la Eficiencia Operativa y la Adopción de los Procedimientos Documentados del SGC.	21/07/2025	 399,760.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Estructuración operativa de los programas de relacionamiento institucional para su sostenibilidad y evolución	Activación de la Bitácora Digital para la Gobernanza y Trazabilidad de Acuerdos y Compromisos Institucionales.	21/07/2025	 576,700.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Refrendo estratégico y operativo de prototipos para nuevos modelos de negocio	Informe de Veredicto del Piloto y Recomendaciones para la Fase de Escalamiento o Desinversión.	22/07/2025	 503,740.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Término de implementación y transferencia del sistema de monitoreo presupuestal	Supervisión de la Efectividad del Sistema de Monitoreo en la Optimización del Control Presupuestal.	23/07/2025	 356,130.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Validación de prototipos y determinación de acciones futuras	Actualización de la Hoja de Ruta Estratégica para la Innovación en Modelos de Negocio Integrando Lecciones Clave.	23/07/2025	 514,690.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Certificación de programas formativos en diversidad e inclusión	Validación del Ciclo de Programas de Sensibilización y el Consolidado de su Impacto en la Cultura.	24/07/2025	 354,010.00 
+A-7 Finanzas	Análisis de Rentabilidad	Revisión de resultados del proyecto de rentabilidad	Emisión de la Declaratoria Final de Valor Generado Cuantificando el Impacto Financiero y Operativo Total.	24/07/2025	 358,180.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Activación de Iniciativas de Mejora Estratégica Basadas en el Diagnóstico del SGC.	25/07/2025	 311,670.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Estrategias de mejora en propuestas comerciales con base en análisis de resultados previos	Guías de Posicionamiento Estratégico y Diferenciación por Segmento de Cliente y Línea de Servicio.	25/07/2025	 589,620.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Fase de cierre y evaluación de impacto de programas de desarrolloEvaluación y Actualización de la Matriz de Talento (9-Box) y los Mapas de Sucesión Basados en Desempeño.	28/07/2025	 449,940.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Culminación táctica de estrategias de participación en licitaciones públicas	War Room: Simulación de un Proceso de Licitación de Alta Complejidad bajo Presión Competitiva.	28/07/2025	 482,770.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Entrega final y certificación del diagnóstico de diversidad e inclusión	Veredicto del Análisis de Benchmarking y Entrega del Reporte de Posicionamiento Competitivo en DEI.	29/07/2025	 359,540.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Término operativo de la implementación de políticas	 medición y formación en la gestión de inventariosFormulación del Informe de Impacto Financiero y Cuantificación del Retorno de la Inversión (ROI) del Proyecto de Inventarios.	29/07/2025	 307,360.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Evaluación y entrega de resultados finales de D&I	Análisis de Resultados frente a los KPIs de Diversidad e Inclusión y la Medición de su Impacto.	30/07/2025	 347,460.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Consolidación de mejoras aplicadas y criterios de sostenibilidad	Diseño de Mecanismos de Gobernanza para la Sostenibilidad y la Evolución de la Mejora Continua en Logística.	30/07/2025	 305,600.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Seguimiento ejecutivo al uso institucional del Sistema de Gestión de Calidad (SGC)	Elaboración del Caso de Negocio que Cuantifica el Valor Generado por la Adopción del SGC.	31/07/2025	 499,770.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Estructuración de mecanismos de colaboración con aliados estratégicos y entidades públicas para nuevos modelos de negocio	Presentación de Esquemas de Colaboración y Vehículos de Co-inversión para Acelerar la Innovación.	31/07/2025	 504,640.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Protocolización y Despliegue Institucional de los Manuales Optimizados de Calidad y Operaciones.	01/08/2025	 313,650.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Finalización documental y protocolización del plan de sucesión	Emisión del Acta de Protocolización y Despliegue de la Versión Final y Actualizada del Plan de Sucesión.	01/08/2025	 349,970.00 
+A-7 Finanzas	Análisis de Rentabilidad	Evaluación de impacto de la estrategia de precios	Veredicto Estratégico sobre el Balance Óptimo entre la Rentabilidad por Producto y la Participación de Mercado.	04/08/2025	 363,130.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Consolidación del modelo de relacionamiento institucional con enfoque en sostenibilidad y mejora continua	Planes de Acción para la Consolidación y Profundización de Alianzas de Alto Valor Estratégico.	04/08/2025	 491,650.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Validación y entrega formal del marco de perfiles de talentoCatálogo Maestro y Protocolización de la Arquitectura de Perfiles de Competencias por Rol.	05/08/2025	 355,270.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Reporte final de la eficacia presupuestal del ciclo 2024	Elaboración y Presentación del Informe Anual de Desempeño y Eficiencia Presupuestal ante la Dirección.	05/08/2025	 350,310.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Integración de hallazgos estratégicos en la toma de decisiones comerciales y de desarrollo de producto	Herramienta de Gobernanza para el Seguimiento y la Medición del Avance de las Iniciativas Estratégicas.	07/08/2025	 516,440.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Aplicación práctica y fortalecimiento del liderazgo en equipos de alto desempeño	Foro para la Capitalización de Conocimiento y Sistematización de Prácticas Exitosas de Liderazgo.	07/08/2025	 173,010.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Formalización y activación operativa de alianzas institucionales estratégicas	Formalización de Protocolos de Colaboración y Cartas de Intención con Entidades Gubernamentales y Privadas.	08/08/2025	 582,420.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Culminación táctica de estrategias de participación en licitaciones públicas	Propuesta para la Optimización y Sofisticación del Portafolio de Productos y Servicios de Alto Valor.	08/08/2025	 482,830.00 
+A-7 Finanzas	Análisis de Rentabilidad	Fase final de medición de impacto y cierre de iniciativas de ahorro	Elaboración del Informe Ejecutivo de Cierre que Detalla el Impacto y el ROI del Plan de Eficiencia Operativa.	11/08/2025	 360,370.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Validación de prototipos y determinación de acciones futuras	Junta Ejecutiva de Veredicto sobre Resultados del Piloto y Decisión Fundamentada de Escalamiento.	11/08/2025	 497,230.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Diagnóstico de Madurez en la Adopción y el Uso Estratégico de KPIs en las Unidades de Negocio.	12/08/2025	 311,000.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Término del proceso de adopción cultural y alineación directiva sobre el modelo OKR	Estructuración del Ciclo de Vida y el Sistema de Gobernanza de los OKRs Corporativos.	12/08/2025	 176,870.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Acreditación de la Alineación Estratégica de los KPIs Institucionales con los Objetivos 2025.	13/08/2025	 308,580.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Activación estratégica del mapeo institucional para el fortalecimiento de relaciones clave	Implementación de la Plataforma de Gobernanza para la Gestión de Relaciones con Aliados (SRM).	14/08/2025	 577,050.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Determinación documental y transferencia de programas de desarrollo para sucesores	Informe de Cierre y Transferencia del Portafolio de Activos y Materiales del Programa de Sucesores.	14/08/2025	 354,020.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Resultados y cierre del ciclo de inversión	Análisis y Veredicto del Rendimiento Real del Portafolio de Inversión frente a los Benchmarks de Mercado.	15/08/2025	 357,250.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Culminación estratégica del programa de liderazgo y proyección de capacidades organizacionais	Ecosistema de Formación Continua para la Evolución Sostenible de las Capacidades de Liderazgo.	15/08/2025	 366,340.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Conclusión estratégica del análisis y adopción de modelos de negocio innovadores	Presentación Ejecutiva de Cierre para la Capitalización de Aprendizajes y la Definición de la Agenda de Innovación Futura.	19/08/2025	 510,820.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Estrategias de mejora en propuestas comerciales con base en análisis de resultados previos	Taller para la Arquitectura de Propuestas de Valor Basadas en la Inteligencia Competitiva Reciente.	19/08/2025	 576,970.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Término del proceso de adopción cultural y alineación directiva sobre el modelo OKR	Publicación del Manual de Gobernanza para el Sistema de Objetivos y Resultados Clave (OKR) en toda la empresa.	20/08/2025	 365,040.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Conclusión estratégica del análisis de tendencias y alineación comercial para licitaciones futuras	Sesión de Planificación Estratégica 2026: Sincronización de Áreas Comerciales Técnicas y Directivas.	20/08/2025	 589,160.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Balance final de resultados y cierre del proyecto de tesorería	Emisión del Memorándum Ejecutivo de Cierre del Proyecto Estratégico de Transformación de la Gestión de Tesorería.	21/08/2025	 353,700.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Aplicación práctica y fortalecimiento del liderazgo en equipos de alto desempeño	Plan de Desarrollo de Liderazgo Individualizado Alineado con los Objetivos Estratégicos del Negocio.	21/08/2025	 153,010.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Entrega y cierre formal de la estrategia de atracción de talentoFormalización de Alianzas Estratégicas con Instituciones Educativas y Headhunters para la Atracción de Talento.	22/08/2025	 354,040.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Integración del análisis competitivo en la planificación estratégica y comercial de Ryse Médica	Sesión de Despliegue de Capacidades Analíticas Avanzadas en el Uso de Inteligencia Competitiva.	22/08/2025	 504,310.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Consolidación de mejoras aplicadas y criterios de sostenibilidad	Diagnóstico Comparativo de Desempeño (Antes vs. Después) y Validación de la Efectividad de las Mejoras Implementadas.	25/08/2025	 299,270.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Fortalecimiento del crecimiento individual	Encuentro de Sinergia entre Mentores y Líderes para la Transferencia de Conocimiento Tácito y Experiencial.	25/08/2025	 366,020.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Propuesta del Plan de Optimización de Desempeño Institucional Basado en la Inteligencia de KPIs.	26/08/2025	 300,440.00 
+A-2 Análisis de mercado	Investigación de Precios	Ajuste estratégico de políticas de precios basado en inteligencia competitiva del mercado	Sesión de Calibración con el Equipo Comercial para la Integración de Benchmarking Competitivo en las Ofertas.	26/08/2025	 591,540.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Ejecución de aprendizajes competitivos para el fortalecimiento estratégico de la propuesta de valor de Ryse Médica	Guía de Adaptación Táctica para Escenarios de Negociación y Competencia de Alta Intensidad.	27/08/2025	 515,980.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Formalización estratégica del análisis histórico de licitaciones para la toma de decisiones comerciales	Implementación de la Plataforma de Inteligencia Competitiva para la Toma de Decisiones en Licitaciones (Bid Intelligence).	27/08/2025	 591,500.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Consolidación final del programa	Informe de Resultados y Transferencia del Framework de Liderazgo para la Gestión de la Adaptabilidad Organizacional.	28/08/2025	 350,070.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Despliegue Institucional de los Dashboards de Desempeño para la Toma de Decisiones Tácticas y Estratégicas.	28/08/2025	 311,140.00 
+A-7 Finanzas	Análisis de Rentabilidad	Fase final de medición de impacto y cierre de iniciativas de ahorro	Auditoría de Resultados y Cuantificación Precisa del Valor Generado por las Iniciativas de Optimización de Costos.	01/09/2025	 363,050.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Resultados finales y transferencia de control	Presentación del Informe Final de Optimización Estratégica Detallando los Ajustes y los Resultados Cuantitativos.	01/09/2025	 354,590.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Auditoría final y cierre del ciclo de control presupuestal	Emisión del Informe Consolidado de Desviaciones y Análisis Causa-Raíz del Ciclo Presupuestal.	02/09/2025	 360,430.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Evaluación y entrega de resultados finales de D&I	Protocolo de Transferencia y Capacitación en el Uso del Tablero de Mando para el Monitoreo de DEI.	02/09/2025	 354,800.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Cierre del ciclo anual de evaluación y entrega de resultados estratégicos de talentoHoja de Ruta Estratégica para la Evolución de la Gestión del Capital Humano en el Próximo Ciclo.	03/09/2025	 349,690.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desenlace operativo del sistema de manejo de quejas y evaluación de su efectividad	Monitoreo de efectividad y tiempo de respuesta en los canales de comunicación implementados	03/09/2025	 303,110.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	04/09/2025	 360,480.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Consolidación operativa del nuevo almacén	Validación de la Estabilidad Operativa y el Cumplimiento de KPIs del Nuevo Centro de Distribución.	05/09/2025	 307,610.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Auditoría y cierre del ciclo de gestión de liquidez	Dictamen Final sobre el Impacto de la Política de Liquidez en la Salud y la Flexibilidad Financiera de la Empresa.	05/09/2025	 362,950.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Aplicación práctica y consolidación de habilidades estratégicas	War Room Ejecutivo: Simulación de Decisiones en Escenarios de Disrupción Competitiva y de Mercado.	08/09/2025	 174,250.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Ciclo de monitoreo y resolución de quejas con enfoque en mejora continua	Protocolo de Cierre y Auditoría de Impacto de los Planes de Acción Correctiva y Preventiva (CAPA).	09/09/2025	 307,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Consolidación de Resultados de Desempeño y Formulación de Planes de Desarrollo y Mejora Continua.	09/09/2025	 307,890.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Refrendo estratégico y operativo de prototipos para nuevos modelos de negocio	Lanzamiento del Piloto Controlado para la Medición del Desempeño y la Viabilidad de Nuevos Modelos de Negocio.	10/09/2025	 504,930.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Culminación estratégica del proceso de transformación en toma de decisiones críticas	Veredicto de Madurez e Impacto Institucional sobre el Nuevo Estándar de Toma de Decisiones.	10/09/2025	 366,530.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Activación operativa y formalización de mecanismos de colaboración con aliados estratégicos y entidades públicas	Modelo de Gobernanza para la Toma de Decisiones y la Gestión de Sinergias en Alianzas Estratégicas.	11/09/2025	 496,740.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Finiquito de la etapa de ejecución del modelo de relacionamiento institucional	Sesión Institucional para la Presentación de la Estrategia de Valor Compartido y Generación de Sinergias.	11/09/2025	 577,200.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Entrega y validación final del diagnóstico organizacional	Emisión del Dictamen de Madurez para el Cambio y Presentación de la Hoja de Ruta de Transformación Cultural.	12/09/2025	 354,120.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Activación operativa y formalización de mecanismos de colaboración con aliados estratégicos y entidades públicas	Formalización de Protocolos y Anexos Operativos para la Activación de Colaboraciones y Alianzas.	12/09/2025	 504,700.00 
+A-2 Análisis de mercado	Investigación de Precios	Implementación táctica de la estructura de precios óptima para productos y servicios estratégicos	Lanzamiento Controlado del Piloto de la Nueva Estructura de Precios en Mercados y Clientes Seleccionados.	15/09/2025	 579,560.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Cierre operativo del piloto OKR y fortalecimiento de capacidades internas	Defensa del Caso de Negocio y Cuantificación del Retorno de la Inversión (ROI) del Piloto OKR.	15/09/2025	 166,370.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Consolidación de la Retroalimentación del Negocio en la Versión Final de los Activos Documentales del SGC.	15/09/2025	 309,050.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Validación e implementación operativa de políticas de gobierno corporativo	Simulación de Escenarios Críticos para la Aplicación Práctica y Adopción de las Políticas de Gobernanza.	16/09/2025	 169,820.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Monitoreo y Evaluación de la Gestión del Talento	Entrega y cierre formal de la estrategia de atracción de talentoTransferencia del Paquete de Activos de Marca Empleadora y del Plan de Medios para Campañas de Atracción.	16/09/2025	 359,260.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Finalización estratégica del análisis de licitaciones y fortalecimiento competitivo en procesos de oferta	Scoring Model para la Ponderación y Calificación Estratégica de Oportunidades de Licitación.	17/09/2025	 391,540.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Aplicación práctica y consolidación de habilidades estratégicas	Sustentación de Proyectos Estratégicos para la Optimización de Unidades de Negocio Clave.	17/09/2025	 364,890.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Integración de análisis de tendencias en la estrategia comercial y de licitaciones	Activación de Planes de Acción Comerciales Derivados de la Inteligencia de Mercado Recopilada.	18/09/2025	 579,420.00 
+A-7 Finanzas	Análisis de Rentabilidad	Revisión de resultados del proyecto de rentabilidad	Elaboración del Caso de Éxito del Proyecto de Rentabilidad Documentando la Metodología y el Retorno de la Inversión.	19/09/2025	 360,510.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Fortalecimiento del crecimiento individual	Framework Institucional para la Sostenibilidad de los Programas de Coaching y Mentoría Ejecutiva.	19/09/2025	 366,200.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Integración de hallazgos estratégicos en la toma de decisiones comerciales y de desarrollo de producto	Plan de Acción Institucional para la Capitalización de los Hallazgos del Análisis Competitivo.	22/09/2025	 504,350.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Ejecución de aprendizajes competitivos para el fortalecimiento estratégico de la propuesta de valor de Ryse Médica	Dossier de Inteligencia Competitiva y Argumentarios de Venta para la Fuerza Comercial.	22/09/2025	 504,760.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Programas de Desarrollo de Talento	Cierre del ciclo anual de evaluación y entrega de resultados estratégicos de talentoDictamen Anual sobre la Efectividad y el Retorno de la Inversión de la Estrategia Integral de Talento.	23/09/2025	 354,800.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Reporte final de la eficacia presupuestal del ciclo 2024	Sesión de Transferencia de Conocimiento de la Metodología de Control Presupuestal al Comité Financiero.	23/09/2025	 363,430.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Validación de la Implementación y el Nivel de Adopción de las Herramientas de Monitoreo de KPIs.	24/09/2025	 433,530.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Regularización del proceso de detección de talento y proyección de líderes futuros	Puesta en Marcha del Sistema de Gobernanza para el Monitoreo y Desarrollo del Talento Estratégico.	24/09/2025	 365,900.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Mapa de Riesgos y Oportunidades Tributarias en el Marco Regulatorio Vigente	25/09/2025	 357,440.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Ejecución de aprendizajes competitivos para el fortalecimiento estratégico de la propuesta de valor de Ryse Médica	Junta de Calibración Estratégica: Explotación de las Fortalezas de Ryse frente a las Vulnerabilidades Competitivas.	25/09/2025	 504,020.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Afianzamiento del modelo de objetivos estratégicos y evaluación de preparación organizacional para OKRs	Blueprint del Modelo OKR Tropicalizado a la Cultura y Procesos Operativos de Ryse Médica.	26/09/2025	 370,390.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Cierre del Cronograma de Monitoreo y Emisión del Reporte Consolidado de Cumplimiento y Desempeño.	29/09/2025	 312,660.00 
+A-2 Análisis de mercado	Investigación de Precios	Ajuste estratégico de políticas de precios basado en inteligencia competitiva del mercado	Formulación de Recomendaciones para la Evolución Estratégica del Portafolio de Precios.	29/09/2025	 582,720.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Sesión de Calibración Estratégica para la Evolución y Ciclo de Vida del Portafolio de KPIs.	30/09/2025	 307,540.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Término de implementación y transferencia del sistema de monitoreo presupuestal	Programa de Acreditación de Capacidades para los Usuarios Clave en la Operación y Gestión del Sistema.	30/09/2025	 363,620.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionales	Cierre estratégico y evaluación de impacto del cambio	Sesión Ejecutiva de Cierre para la Consolidación de la Transformación y la Definición de los Próximos Pasos.	01/10/2025	 350,090.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Activación estratégica del mapeo institucional para el fortalecimiento de relaciones clave	Sesión de Activación Inter-funcional del Plan de Relacionamiento con el Ecosistema Estratégico.	01/10/2025	 491,440.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Entrega final y certificación del diagnóstico de diversidad e inclusión	Comprobación de Cierre de la Fase de Diagnóstico y Análisis de la Situación Actual de Diversidad e Inclusión.	02/10/2025	 350,400.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Estructuración de mecanismos de colaboración con aliados estratégicos y entidades públicas para nuevos modelos de negocio	Guía Institucional para el Diseño y la Ejecución de Asociaciones Público-Privadas (APPs) en el Sector Salud.	02/10/2025	 514,620.00 
+A-7 Finanzas	Análisis de Rentabilidad	Archivo final del análisis de rentabilidad 2024	Emisión del Memorándum de Conclusiones y Recomendaciones Estratégicas del Análisis de Rentabilidad.	02/10/2025	 359,920.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Conclusión estratégica del análisis de tendencias y alineación comercial para licitaciones futuras	Mapa Estratégico de Oportunidades de Crecimiento en el Ecosistema de Salud Nacional e Internacional.	03/10/2025	 494,430.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Finiquito de la etapa de ejecución del modelo de relacionamiento institucional	Lanzamiento de Iniciativas Piloto de Valor Compartido con Instituciones Líderes del Sector.	03/10/2025	 589,420.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Estabilización estratégica de KPIs para la Alta Dirección	Estudio Comparativo de Escenarios Proyectados vs. Resultados Reales para la Optimización del Modelo Decisional.	06/10/2025	 274,250.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Culminación táctica de estrategias de participación en licitaciones públicas	Sesión de Innovación con Aliados Estratégicos para la Co-creación de Soluciones Integrales para el Sector Salud.	07/10/2025	 579,670.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Implementación práctica y consolidación de capacidades de innovación organizacional	Innovation Summit: Defensa de Casos de Negocio de Alto Impacto ante el Comité de Inversiones.	07/10/2025	 365,740.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Seguimiento ejecutivo al uso institucional del Sistema de Gestión de Calidad (SGC)	Verificación de la Institucionalización de las Normas y Estándares del SGC en la Operación Diaria.	08/10/2025	 313,380.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Fortalecimiento operativo y validación del sistema de control de inventarios	Ratificación Funcional del Sistema de Alertas Predictivas y Reportes Automatizados de Gestión de Inventario.	09/10/2025	 307,540.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Consolidación de condiciones para la adopción de modelos de negocio innovadores	Protocolo de Cierre y Verificación de las Condiciones Habilitadoras para la Implementación de Nuevos Modelos.	09/10/2025	 510,860.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Protocolo de Cierre de Hallazgos de Auditoría y Verificación de la Sostenibilidad de las Soluciones Implementadas.	10/10/2025	 313,650.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Estructuración de mecanismos de colaboración con aliados estratégicos y entidades públicas para nuevos modelos de negocio	Sesión de Co-creación con Aliados Estratégicos para la Exploración de Modelos de Negocio Disruptivos.	10/10/2025	 496,420.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Validación de Cierre del Ciclo de Mejora de Procesos Críticos y la Cuantificación de los Beneficios Obtenidos.	10/10/2025	 311,680.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Sello de Conformidad y Validación de Requisitos Auditables para el Ecosistema de Proveedores Estratégicos.	13/10/2025	 313,610.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Integración del análisis competitivo en la planificación estratégica y comercial de Ryse Médica	Puesta en Marcha del Dashboard de Inteligencia Competitiva y sus Protocolos de Actualización en Tiempo Real.	13/10/2025	 504,580.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Validación y formalización de roles críticos y perfiles de éxito	Dictamen Final de Criticidad y Validación del Mapa de Roles Estratégicos con el Comité Directivo.	14/10/2025	 354,040.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Evaluación estratégica de adopción de modelos de negocio innovadores para Ryse Médica	Sesión Ejecutiva de Veredicto sobre la Viabilidad Financiera y el Impacto Estratégico de Nuevos Modelos.	14/10/2025	 505,440.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Entrega y validación final del diagnóstico organizacional	Presentación del Mapa de Barreras Organizacionales y Taller de Priorización Estratégica de Iniciativas.	15/10/2025	 354,250.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Cierre del diagnóstico de cumplimiento y definición de acciones estratégicas en gobernanza	Junta Ejecutiva de Consenso sobre el Diagnóstico de Gobernanza y Priorización de Iniciativas Estratégicas.	15/10/2025	 364,940.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Análisis de Impacto y Cuantificación del Retorno de la Inversión del Programa de Fortalecimiento de Capacidades.	16/10/2025	 303,610.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Comprobación y transferencia de herramientas para decisiones críticas	Mentoría Ejecutiva para la Aceleración de la Adopción del Modelo de Decisión en las Áreas Operativas.	16/10/2025	 366,400.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Programas de Desarrollo de Talento	Cierre del ciclo anual de evaluación y entrega de resultados estratégicos de talentoInforme Final de Impacto de las Estrategias de Optimización y Retención de Talento Clave.	17/10/2025	 359,380.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Refrendo estratégico y operativo de prototipos para nuevos modelos de negocio	Monitoreo de KPIs del Prototipo y Análisis de Sensibilidad Financiera Operativa y de Mercado.	17/10/2025	 503,780.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desenlace operativo del sistema de manejo de quejas y evaluación de su efectividad	Revisión funcional del sistema centralizado de gestión de quejas y análisis de su integración con procesos internos	20/10/2025	 311,170.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Veredicto formal de la implementación y validación de operación regular	Asesoría Estratégica para la Formalización y la Documentación de la Nueva Línea Base de Desempeño Operativo.	20/10/2025	 311,600.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Culminación estratégica del proceso de transformación en toma de decisiones críticas	Protocolo para la Institucionalización del “Modelo Ryse” de Toma de Decisiones de Alta Complejidad.	21/10/2025	 273,010.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Balance final de resultados y cierre del proyecto de tesorería	Creación del Balance Final de la Gestión de Tesorería Cuantificando los Resultados los Ahorros y el Valor Generado.	21/10/2025	 358,010.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Comprobación de la Adopción y el Cumplimiento de las Políticas de Calidad en los Procesos Transversales.	22/10/2025	 308,830.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Integración de hallazgos en la estrategia institucional de participación en licitaciones	Hoja de Ruta para el Monitoreo y Gobernanza de la Implementación de Mejoras en el Proceso de Oferta.	22/10/2025	 583,100.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Afianzamiento del modelo de objetivos estratégicos y evaluación de preparación organizacional para OKRs	Estrategia de Gestión del Cambio (Change Management) para la Adopción Sostenible de OKRs.	23/10/2025	 272,950.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Culminación estratégica del programa de liderazgo y proyección de capacidades organizacionais	Inmersión Práctica para la Activación del Nuevo Modelo de Liderazgo en los Equipos Operativos.	23/10/2025	 364,960.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Consolidación de condiciones para la adopción de modelos de negocio innovadores	Matriz de Decisión Estratégica para el Lanzamiento y Escalabilidad de Nuevos Modelos de Servicio.	24/10/2025	 514,460.00 
+A-2 Análisis de mercado	Investigación de Precios	Criterios financieros y comerciales para la implementación efectiva de estrategias de precios	Puesta en Marcha del Tablero de Mando para el Monitoreo en Tiempo Real del Desempeño y Elasticidad de Precios.	24/10/2025	 576,740.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Finalización documental y protocolización del plan de sucesión	Compilación y Entrega del Dossier de Transferencia de Conocimiento al Comité de Talento y Sucesión.	27/10/2025	 359,620.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Aplicación estratégica del análisis competitivo para el fortalecimiento de la oferta de valor de Ryse Médica	Taller de Activación de Insights Competitivos para la Estrategia de Evolución del Portafolio de Productos y Servicios.	27/10/2025	 516,450.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Resultados finales y transferencia de control	Reporte Ejecutivo de Evaluación de Impacto y Cuantificación del ROI de la Transformación.	28/10/2025	 350,090.00 
+A-7 Finanzas	Análisis de Rentabilidad	Evaluación de impacto de la estrategia de precios	Cuantificación del Impacto en Márgenes y Posicionamiento de Mercado de la Nueva Estrategia de Precios.	28/10/2025	 353,420.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Auditoría final y cierre del ciclo de control presupuestal	Comprobación de la Adopción y la Eficacia de los Nuevos Procesos de Autorización y Control de Egresos.	28/10/2025	 356,000.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Veredicto formal de la implementación y validación de operación regular	Verificación Final de Procesos y Sincronización de Sistemas Post-Migración y Estabilización de Inventario.	29/10/2025	 312,980.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Término de implementación y transferencia del sistema de monitoreo presupuestal	Protocolo de Optimización Final de los Reportes y Dashboards Presupuestales basado en la Retroalimentación de los Stakeholders.	29/10/2025	 353,510.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Regularización del proceso de detección de talento y proyección de líderes futuros	Puesta en Marcha del Sistema de Gobernanza para el Monitoreo y Desarrollo del Talento Estratégico.	30/10/2025	 365,240.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Formalización y activación operativa de alianzas institucionales estratégicas	Sesión de Lanzamiento de Alianzas y Co-creación de Planes de Trabajo Conjuntos con Socios Estratégicos.	31/10/2025	 494,730.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Evaluación de cumplimiento y cierre del modelo presupuestal	Entrega del Informe de Cierre y Evaluación de Desempeño del Ejercicio Presupuestal 2025	31/10/2025	 357,420.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Optimización de estrategias de participación en licitaciones a partir del análisis de desempeño recente	Elaboración del Dossier Estratégico para el Fortalecimiento de la Ventaja Competitiva en Procesos de Licitación.	03/11/2025	 579,840.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Finalización del proceso de preparación institucional para presentaciones estratégicas a inversionistas	Jornada de Calibración de la Narrativa Corporativa para la Homologación y Consistencia de Mensajes Clave.	04/11/2025	 366,230.00 
+A-4 Desarrollo de productos y servicios	Análisis de la Competencia	Aplicación estratégica del análisis competitivo para el fortalecimiento de la oferta de valor de Ryse Médica	Documento de Posicionamiento Estratégico y Propuesta de Valor Diferenciada por Línea de Negocio.	04/11/2025	 510,800.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Reporte de resultados y transferencia final del modelo de tesorería	Acreditación de Competencias del Equipo de Tesorería en la Nueva Metodología de Gestión Financiera Estratégica.	04/11/2025	 358,050.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Certificación y formal del marco de diversidad e inclusión	Manual Operativo de Prácticas Inclusivas y su Despliegue en toda la Organización.	05/11/2025	 355,520.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Validación de prototipos y determinación de acciones futuras	Documento de Capitalización de Aprendizajes y Sistematización de la Propiedad Intelectual Generada en el Piloto.	05/11/2025	 510,740.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Programa de Inmersión y Capacitación para el Equipo Financiero-Contable	06/11/2025	 357,870.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Cierre estratégico y evaluación de impacto del cambio	Evaluación de la Efectividad de la Estrategia de Comunicación y Reporte de Impacto en el Clima y la Adopción Organizacional.	06/11/2025	 355,190.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Calibración de las Metas Operativas de la Compañía Basada en el Análisis Predictivo de Datos Históricos.	07/11/2025	 308,250.00 
+A-2 Análisis de mercado	Investigación de Precios	Implementación táctica de la estructura de precios óptima para productos y servicios estratégicos	Jornada de Institucionalización y Transferencia del Nuevo Framework de Gobernanza de Precios.	10/11/2025	 582,190.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Estructuración operativa de los programas de relacionamiento institucional para su sostenibilidad y evolución	Institucionalización del Calendario Anual de Hitos para la Gestión de Relaciones con el Ecosistema.	10/11/2025	 577,050.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Informe de Evolución y Madurez del Desempeño y la Resiliencia de la Cadena de Suministro.	11/11/2025	 503,530.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Aplicación práctica y fortalecimiento del liderazgo en equipos de alto desempeño	Diagnóstico 360 y Plan de Calibración de Estilos de Liderazgo para la Gestión de Equipos de Alto Rendimiento.	11/11/2025	 369,820.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Integración de análisis de tendencias en la estrategia comercial y de licitaciones	Herramienta de Prospectiva para la Evaluación Proactiva de Nuevas Tendencias del Sector.	12/11/2025	 483,420.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Seguimiento ejecutivo al uso institucional del Sistema de Gestión de Calidad (SGC)	Seguimiento al uso activo del SGC por parte de la Alta Dirección en la toma de decisiones estratégicas y operativas	12/11/2025	 299,290.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Validación final y auditoría del plan de sucesión	Presentación al Comité Directivo del Informe de Exposición de Riesgo y Cobertura del Plan de Sucesión.	13/11/2025	 350,380.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Consolidación operativa del nuevo almacén	Entrega del Informe de Cierre y Veredicto Estratégico del Proyecto de Adecuación y Puesta en Marcha del Almacén.	14/11/2025	 307,460.00 
+A-7 Finanzas	Análisis de Rentabilidad	Archivo final del análisis de rentabilidad 2024	Clausura Formal y Sellado del Expediente del Proyecto para su Resguardo y Consulta Histórica por Auditoría.	14/11/2025	 357,290.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Matriz Maestra de KPIs incluyendo sus Protocolos de Gobernanza Frecuencia y Responsables.	17/11/2025	 308,900.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Consolidación del modelo de relacionamiento institucional con enfoque en sostenibilidad y mejora continua	Taller de Calibración de la Estrategia de Relacionamiento y Definición de Indicadores de Influencia y Reputación.	17/11/2025	 491,280.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Determinación documental y transferencia de programas de desarrollo para sucesores	Creación y Entrega de los Planes de Desarrollo Individualizados y Acelerados para Candidatos a Sucesión.	17/11/2025	 354,290.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Entrega y validación final del diagnóstico organizacional	Diagnóstico Final de Capacidades Organizacionais y Veredicto sobre las Brechas Estratégicas a Cerrar.	18/11/2025	 350,030.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Reporte de resultados y transferencia final del modelo de tesorería	Dictamen Final sobre la Madurez la Eficiencia y la Sostenibilidad del Nuevo Modelo de Gestión de Tesorería.	18/11/2025	 360,070.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Estabilización estratégica de KPIs para la Alta Dirección	Diagnóstico de Congruencia entre los Indicadores Clave de Desempeño (KPIs) y la Estrategia Institucional.	19/11/2025	 366,060.00 
+A-1 Dirección ejecutiva	Fomento para el Desarrollo de Líderes dentro de la Empresa	Implementación práctica y consolidación de capacidades de innovación organizacional	Inmersión Práctica en Metodologías Ágiles para el Prototipado y Validación de Proyectos de Innovación.	20/11/2025	 366,240.00 
+A-5 Operaciones y logística	Proyecto para la puesta en marcha del nuevo almacen	Veredicto formal de la implementación y validación de operación regular	Dictamen Técnico sobre la Eficiencia la Capacidad y la Escalabilidad del Nuevo Modelo Operativo Logístico.	21/11/2025	 299,770.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Evaluación estratégica de adopción de modelos de negocio innovadores para Ryse Médica	Matriz de Decisión para la Evaluación y Priorización de Oportunidades de Negocio Innovadoras.	21/11/2025	 505,030.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Programas de Desarrollo de Talento	Validación y entrega formal del marco de perfiles de talentoDictamen Final y Estratégico sobre las Necesidades y Brechas de Talento por Región Geográfica.	21/11/2025	 354,280.00 
+A-6 Recursos Humanos	Gestión de Diversidad e Inclusión	Certificación de programas formativos en diversidad e inclusión	Veredicto de Acreditación de Competencias en Liderazgo Inclusivo para la Plana Gerencial y Directiva.	24/11/2025	 359,510.00 
+A-1 Dirección ejecutiva	Relación con Inversionistas	Finalización operativa y consolidación del modelo de reportes financieros y operativos	Calendario Maestro de Hitos y Entregables de Comunicación Financiera y Operativa para el Mercado.	24/11/2025	 370,490.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desenlace operativo del sistema de manejo de quejas y evaluación de su efectividad	Veredicto sobre la Calidad y la Estandarización en la Captura de Datos dentro del Sistema de Gestión.	25/11/2025	 489,770.00 
+A-1 Dirección ejecutiva	Evaluación e Implementación de OKRs	Término ejecutivo del piloto OKR y transferencia estratégica para decisiones futuras	Junta Ejecutiva para la Resolución sobre el Escalamiento del Modelo OKR en la Organización.	25/11/2025	 272,940.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Integración de análisis de tendencias en la estrategia comercial y de licitaciones	Veredicto de Impacto y Plan de Acción sobre las Oportunidades de Mercado Priorizadas por el Comité Directivo.	26/11/2025	 489,420.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Estructuración operativa de los programas de relacionamiento institucional para su sostenibilidad y evolución	Modelo de Gobernanza para la Sostenibilidad y Escalabilidad de las Alianzas Estratégicas Clave.	26/11/2025	 579,890.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Cierre técnico-operativo del diseño e implementación de políticas de abastecimiento óptimo	Declaratoria de Cierre y Validación de la Implementación Exitosa del Nuevo Modelo de Abastecimiento.	26/11/2025	 303,530.00 
+A-7 Finanzas	Desarrollo y gestión presupuestal	Reporte final de la eficacia presupuestal del ciclo 2024	Análisis Estratégico de las Causas Raíz de las Desviaciones Presupuestales Significativas y sus Implicaciones.	27/11/2025	 360,250.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Consolidación del sistema de monitoreo y fortalecimiento del modelo de mejora continua	Despliegue de Competencias en Gobernanza y Gestión de la Mejora Continua para Líderes de Unidades de Negocio.	27/11/2025	 172,860.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Implementación del Tablero de Control para el Monitoreo de KPIs Fiscales Clave	28/11/2025	 356,040.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Activación operativa y formalización de mecanismos de colaboración con aliados estratégicos y entidades públicas	Plan de Activación y Hoja de Ruta Detallada para el Despliegue de Alianzas Prioritarias.	28/11/2025	 510,790.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Auditoría y cierre del ciclo de gestión de liquidez	Evaluación de Precisión y Calibración del Modelo de Pronóstico de Flujo de Caja (Cash Flow Forecasting).	01/12/2025	 363,390.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Cierre estratégico y evaluación de impacto del cambio	Dictamen de Madurez sobre la Cultura Organizacional de Agilidad Adaptación al Cambio y Resiliencia.	01/12/2025	 354,070.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Finalización de la implementación de mejoras en el sistema de gestión de calidad y estandarización de procesos con proveedores	Informe de Veredicto y Recomendaciones Estratégicas Derivadas de los Simulacros de Auditoría.	01/12/2025	 313,160.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Estabilización estratégica de KPIs para la Alta Dirección	Inmersión Estratégica para Líderes en la Detección de Señales Débiles y Alertas Tempranas del Mercado.	02/12/2025	 172,940.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Finiquito de la etapa de ejecución del modelo de relacionamiento institucional	Mecanismos de Co-gobierno y Medición de Impacto Conjunto para las Alianzas Estratégicas.	02/12/2025	 483,160.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Programas de Desarrollo de Talento	Fase de cierre y evaluación de impacto de programas de desarrolloSesión de Veredicto sobre el Avance de Competencias y el Plan de Sostenibilidad de los Programas de Desarrollo.	03/12/2025	 349,940.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Conclusión estratégica del análisis y adopción de modelos de negocio innovadores	Informe Final de Veredicto sobre la Viabilidad y Adopción de los Modelos de Negocio Evaluados.	03/12/2025	 496,770.00 
+A-2 Análisis de mercado	Investigación de Precios	Criterios financeiros y comerciales para la implementación efectiva de estrategias de precios	Inmersión en Análisis de Rentabilidad y Simulación de Escenarios de Márgenes y Precios.	03/12/2025	 582,910.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Reporte de resultados y transferencia final del modelo de tesorería	Cuantificación del Impacto de la Estrategia en el Balance Óptimo entre la Liquidez Operativa y el Rendimiento del Capital.	04/12/2025	 359,870.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Optimización de estrategias de participación en licitaciones a partir del análisis de desempeño recente	Seminario para la Capitalización de Aprendizajes y Sistematización de Factores Críticos de Éxito en Licitaciones.	05/12/2025	 489,420.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Consolidación de condiciones para la adopción de modelos de negocio innovadores	Sesión Final de Alineación Estratégica con la Dirección para la Activación Go/No-Go de Modelos Innovadores.	05/12/2025	 496,790.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Hoja de Ruta para la Implementación Gradual de la Nueva Estructura Fiscal	08/12/2025	 357,740.00 
+A-4 Desarrollo de productos y servicios	Desarrollo de Modelos de Negocio Innovadores	Evaluación estratégica de adopción de modelos de negocio innovadores para Ryse Médica	Propuesta para el Lanzamiento de una Unidad de Negocio Piloto para la Validación de un Modelo Innovador.	08/12/2025	 510,940.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Resultado operativo de los procesos optimizados del Sistema de Gestión de Calidad	Protocolización de la Versión Maestra de la Documentación del SGC y su Despliegue en la Plataforma Digital.	09/12/2025	 308,490.00 
+A-1 Dirección ejecutiva	Gobierno Corporativo	Integración de principios de gobernanza y ética en la cultura organizacional	Laboratorio de Análisis de Casuística para la Aplicación de Principios de Gobierno Corporativo en Decisiones Clave.	10/12/2025	 366,370.00 
+A-3 Marketing y ventas	Evaluación de Resultados de Licitaciones	Optimización operativa e implementación de mejoras en los procesos internos de licitación	Inmersión en los Nuevos Protocolos de Licitación y Herramientas de Inteligencia Comercial.	10/12/2025	 483,540.00 
+A-6 Recursos Humanos	Planificación de Sucesión	Validación final y auditoría del plan de sucesión	Evaluación Final y Validación de la Preparación de los Candidatos para Asumir Roles Críticos de Sucesión.	11/12/2025	 354,400.00 
+A-3 Marketing y ventas	Desarrollo de relaciones institucionales sólidas	Activación estratégica del mapeo institucional para el fortalecimiento de relaciones clave	Agenda Estratégica y Mapa de Ruta para la Gestión del Relacionamiento Institucional con Stakeholders Clave.	11/12/2025	 483,540.00 
+A-7 Finanzas	Diagnóstico de la Estructura Fiscal y Arquitectura de Optimización	Diagnóstico 360 de la Exposición y Eficiencia Fiscal Actual	Elaboración del Informe de Valor Generado Cuantificando el Impacto del Proyecto Fsical  y la Calidad de la Planeación Financiera.	11/12/2025	 358,000.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Ciclo de monitoreo y resolución de quejas con enfoque en mejora continua	Informe Consolidado de Inteligencia del Cliente Patrones de Comportamiento y Causas Raíz.	12/12/2025	 311,720.00 
+A-5 Operaciones y logística	Proyecto de Optimización del Manejo de Inventarios	Término operativo de la implementación de políticas	 medición y formación en la gestión de inventariosControl del Despliegue de Capacidades y su Aplicación Práctica en la Gestión Diaria del Inventario.	12/12/2025	 311,080.00 
+A-6 Recursos Humanos	Gestion de Talento Humano (CDMX  GDL y Torreón)	Programas de Desarrollo de Talento	Fase de cierre y evaluación de impacto de programas de desarrolloDiagnóstico y Cuantificación del Impacto de los Programas de Formación en los Resultados de las Unidades de Negocio.	15/12/2025	 355,030.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Desenlace operativo del sistema de manejo de quejas y evaluación de su efectividad	Evaluación de Desempeño y Acreditación de Competencias en la Gestión de Situaciones Críticas con Clientes.	15/12/2025	 308,700.00 
+A-7 Finanzas	Análisis de Rentabilidad	Revisión de resultados del proyecto de rentabilidad	Medición y Análisis del Incremento de Rentabilidad Directamente Atribuible a las Recomendaciones Implementadas.	15/12/2025	 356,480.00 
+A-6 Recursos Humanos	Adaptación a Cambios Organizacionais	Consolidación final del programa	Supervisión de la Adopción e Impacto de las Nuevas Tecnologías en la Eficiencia de la Cadena de Valor Logística.	16/12/2025	 359,370.00 
+A-2 Análisis de mercado	Investigación de Precios	Hallazgos de elasticidad para la toma de decisiones estratégicas de precios	Taller de Despliegue de Capacidades Tácticas para la Ejecución de la Nueva Estrategia de Precios.	16/12/2025	 483,100.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Finalización estratégica del análisis de licitaciones y fortalecimiento competitivo en procesos de oferta	Taller de Sinergia para la Traducción de Inteligencia de Mercado en Estrategias de Oferta Ganadoras.	16/12/2025	 582,500.00 
+A-7 Finanzas	Gestion del Area de Tesoreria	Resultados y cierre del ciclo de inversión	Dictamen Final sobre la Efectividad de la Estrategia de Inversión en la Optimización del Balance Riesgo-Rendimiento.	17/12/2025	 356,400.00 
+A-1 Dirección ejecutiva	Capacitación para la Toma de Decisiones Críticas	Comprobación y transferencia de herramientas para decisiones críticas	Formalización del Acta de Transferencia de Capacidades y Verificación de Autonomía Decisional a Equipos.	17/12/2025	 271,460.00 
+A-7 Finanzas	Análisis de Rentabilidad	Archivo final del análisis de rentabilidad 2024	Protocolo de Integración y Archivo del Expediente Maestro del Proyecto de Análisis de Rentabilidad 2025.	18/12/2025	 360,290.00 
+A-2 Análisis de mercado	Análisis de Tendencias en Licitaciones de Equipos Médicos	Formalización estratégica del análisis histórico de licitaciones para la toma de decisiones comerciales	Modelo Predictivo para la Identificación de Patrones de Comportamiento en Licitaciones Públicas y Privadas.	18/12/2025	 491,540.00 
+A-5 Operaciones y logística	Proyecto de Implementaciones de Mejoras relacionadas en el Sistema de Gestión de Calidad	Unificación operativa y evaluación institucional del sistema de KPIs	Formulación de Recomendaciones de Negocio a partir del Análisis Predictivo de los KPIs.	18/12/2025	 300,580.00 
+`;
+
+document.addEventListener('DOMContentLoaded', () => {
+    let fullData = [];
+    let facturacionChart, proveedorChart, timelineChart;
+
+    const parseData = (rawData, year) => {
+        const lines = rawData.trim().split('\n').slice(1);
+        const parsedData = [];
+        for (const line of lines) {
+            const columns = line.split('\t');
+            if (columns.length < 6) continue;
+
+            let [area, proyecto, proveedor, concepto, fechaStr, montoStr] = columns.map(c => c.trim());
+
+            if (!fechaStr || !montoStr) continue;
+
+            if (fechaStr.endsWith('/25')) {
+                fechaStr = fechaStr.replace('/25', '/2025');
+            }
+
+            const dateParts = fechaStr.split('/');
+            const fecha = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+            
+            const monto = parseFloat(montoStr.replace(/,/g, ''));
+
+            if (!isNaN(fecha.getTime()) && !isNaN(monto)) {
+                parsedData.push({
+                    area,
+                    proyecto,
+                    proveedor,
+                    concepto,
+                    fecha,
+                    monto,
+                    anio: year
+                });
+            }
+        }
+        return parsedData;
+    };
+
+    const populateFilters = (data) => {
+        const areas = [...new Set(data.map(item => item.area))].sort();
+        const proyectos = [...new Set(data.map(item => item.proyecto))].sort();
+
+        const areaSelect = document.getElementById('area-select');
+        const proyectoSelect = document.getElementById('proyecto-select');
+
+        areas.forEach(area => {
+            const option = document.createElement('option');
+            option.value = area;
+            option.textContent = area;
+            areaSelect.appendChild(option);
+        });
+        proyectos.forEach(proyecto => {
+            const option = document.createElement('option');
+            option.value = proyecto;
+            option.textContent = proyecto;
+            proyectoSelect.appendChild(option);
+        });
+    };
+    
+    const updateProyectoFilter = () => {
+        const areaSelect = document.getElementById('area-select');
+        const proyectoSelect = document.getElementById('proyecto-select');
+        const selectedArea = areaSelect.value;
+        const currentSelectedProject = proyectoSelect.value;
+
+        let proyectos;
+        if (selectedArea === 'todos') {
+            proyectos = [...new Set(fullData.map(item => item.proyecto))].sort();
+        } else {
+            proyectos = [...new Set(
+                fullData
+                    .filter(item => item.area === selectedArea)
+                    .map(item => item.proyecto)
+            )].sort();
+        }
+
+        proyectoSelect.innerHTML = '<option value="todos">Todos</option>';
+        proyectos.forEach(proyecto => {
+            const option = document.createElement('option');
+            option.value = proyecto;
+            option.textContent = proyecto;
+            proyectoSelect.appendChild(option);
+        });
+        
+        if (proyectos.includes(currentSelectedProject)) {
+            proyectoSelect.value = currentSelectedProject;
+        } else {
+            proyectoSelect.value = 'todos';
+        }
+    };
+
+
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat('es-MX', {
+            style: 'currency',
+            currency: 'MXN'
+        }).format(value);
+    };
+
+    const updateDashboard = () => {
+        const periodo = document.getElementById('periodo-select').value;
+        const area = document.getElementById('area-select').value;
+        const proyecto = document.getElementById('proyecto-select').value;
+        const mes = document.getElementById('mes-select').value;
+
+        const filteredData = fullData.filter(d => {
+            const anioMatch = (periodo === 'ambos') || (d.anio.toString() === periodo);
+            const areaMatch = (area === 'todos') || (d.area === area);
+            const proyectoMatch = (proyecto === 'todos') || (d.proyecto === proyecto);
+            const mesMatch = (mes === 'todos') || (d.fecha.getMonth() == mes);
+            return anioMatch && areaMatch && proyectoMatch && mesMatch;
+        });
+
+        updateKPIs(filteredData);
+        updateFacturacionChart(filteredData);
+        updateProveedorChart(filteredData);
+        updateTimelineChart(filteredData);
+        updateTable(filteredData);
+    };
+    
+    const updateKPIs = (data) => {
+        const montoTotal = data.reduce((sum, item) => sum + item.monto, 0);
+        const totalConceptos = data.length;
+        const montoPromedio = totalConceptos > 0 ? montoTotal / totalConceptos : 0;
+        const totalProyectos = new Set(data.map(item => item.proyecto)).size;
+
+        document.getElementById('kpi-monto-total').textContent = formatCurrency(montoTotal);
+        document.getElementById('kpi-total-conceptos').textContent = totalConceptos.toLocaleString('es-MX');
+        document.getElementById('kpi-monto-promedio').textContent = formatCurrency(montoPromedio);
+        document.getElementById('kpi-total-proyectos').textContent = totalProyectos.toLocaleString('es-MX');
+    };
+
+    const updateTable = (data) => {
+        const tableBody = document.getElementById('table-body');
+        tableBody.innerHTML = '';
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${item.area}</td>
+                <td>${item.proyecto}</td>
+                <td>${item.proveedor}</td>
+                <td>${item.concepto}</td>
+                <td>${item.fecha.toLocaleDateString('es-ES')}</td>
+                <td>${formatCurrency(item.monto)}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+    };
+    
+    const updateFacturacionChart = (data) => {
+        const monthlyData = {};
+        const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+        
+        data.forEach(item => {
+            const monthKey = `${item.fecha.getFullYear()}-${String(item.fecha.getMonth()).padStart(2, '0')}`;
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = 0;
+            }
+            monthlyData[monthKey] += item.monto;
+        });
+
+        const sortedKeys = Object.keys(monthlyData).sort();
+        const labels = sortedKeys.map(key => {
+            const [year, month] = key.split('-');
+            return `${monthNames[parseInt(month)]} ${year}`;
+        });
+        const values = sortedKeys.map(key => monthlyData[key]);
+        
+        facturacionChart.data.labels = labels;
+        facturacionChart.data.datasets[0].data = values;
+        facturacionChart.update();
+    };
+
+    const updateProveedorChart = (data) => {
+        const proveedorData = {};
+        data.forEach(item => {
+            if (!proveedorData[item.proveedor]) {
+                proveedorData[item.proveedor] = 0;
+            }
+            proveedorData[item.proveedor] += item.monto;
+        });
+
+        const sortedProveedores = Object.entries(proveedorData)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 10);
+
+        const labels = sortedProveedores.map(entry => entry[0]);
+        const values = sortedProveedores.map(entry => entry[1]);
+
+        proveedorChart.data.labels = labels;
+        proveedorChart.data.datasets[0].data = values;
+        proveedorChart.update();
+    };
+    
+    const updateTimelineChart = (data) => {
+        const projectTimelines = {};
+        data.forEach(item => {
+            if (!projectTimelines[item.proyecto]) {
+                projectTimelines[item.proyecto] = { min: item.fecha, max: item.fecha };
+            } else {
+                if (item.fecha < projectTimelines[item.proyecto].min) {
+                    projectTimelines[item.proyecto].min = item.fecha;
+                }
+                if (item.fecha > projectTimelines[item.proyecto].max) {
+                    projectTimelines[item.proyecto].max = item.fecha;
+                }
+            }
+        });
+
+        const labels = Object.keys(projectTimelines);
+        const chartData = labels.map(label => [projectTimelines[label].min, projectTimelines[label].max]);
+
+        const timelineCanvas = document.getElementById('timeline-chart');
+        const numProjects = labels.length;
+        const newHeight = Math.max(400, (numProjects * 40) + 80); 
+        timelineCanvas.style.height = `${newHeight}px`;
+        
+        timelineChart.data.labels = labels;
+        timelineChart.data.datasets[0].data = chartData;
+        
+        timelineChart.resize();
+        timelineChart.update();
+    };
+
+    const exportToCSV = () => {
+        const table = document.getElementById('detail-table');
+        let csv = [];
+        const rows = table.querySelectorAll('tr');
+        
+        for (const row of rows) {
+            const cols = row.querySelectorAll('td, th');
+            const rowData = [];
+            for (const col of cols) {
+                let data = col.innerText.replace(/"/g, '""');
+                if (data.includes(',')) {
+                    data = `"${data}"`;
+                }
+                rowData.push(data);
+            }
+            csv.push(rowData.join(','));
+        }
+
+        const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
+        const downloadLink = document.createElement('a');
+        downloadLink.download = 'dashboard_export.csv';
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = 'none';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    };
+
+    // --- NUEVA FUNCIÓN AÑADIDA ---
+    const clearFilters = () => {
+        document.getElementById('periodo-select').value = 'ambos';
+        document.getElementById('area-select').value = 'todos';
+        document.getElementById('mes-select').value = 'todos';
+        
+        // Se llama a updateProyectoFilter para restablecer la lista de proyectos a "Todos"
+        updateProyectoFilter();
+        
+        document.getElementById('proyecto-select').value = 'todos';
+        
+        // Se actualiza todo el dashboard
+        updateDashboard();
+    };
+
+    const init = () => {
+        const data2024Parsed = parseData(data2024, 2024);
+        const data2025Parsed = parseData(data2025, 2025);
+        fullData = [...data2024Parsed, ...data2025Parsed];
+        
+        populateFilters(fullData);
+
+        // Init Charts
+        const facturacionCtx = document.getElementById('facturacion-chart').getContext('2d');
+        facturacionChart = new Chart(facturacionCtx, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Facturación Mensual', data: [], backgroundColor: 'rgba(0, 123, 255, 0.6)' }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: true, text: 'Facturación a lo largo del tiempo' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        const proveedorCtx = document.getElementById('proveedor-chart').getContext('2d');
+        proveedorChart = new Chart(proveedorCtx, {
+            type: 'doughnut',
+            data: { labels: [], datasets: [{ data: [] }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'right' }, title: { display: true, text: 'Distribución por Proveedor (Top 10)' } }
+            }
+        });
+
+        const timelineCtx = document.getElementById('timeline-chart').getContext('2d');
+        timelineChart = new Chart(timelineCtx, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Duración del Proyecto', data: [], backgroundColor: 'rgba(255, 99, 132, 0.6)', borderColor: 'rgba(255, 99, 132, 1)' }] },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: true, text: 'Cronograma por Proyecto Principal' } },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: 'month', tooltipFormat: 'MMM yyyy' },
+                        min: '2024-01-01',
+                        max: '2025-12-31'
+                    }
+                }
+            }
+        });
+
+        // Add event listeners
+        document.getElementById('periodo-select').addEventListener('change', updateDashboard);
+        
+        document.getElementById('area-select').addEventListener('change', () => {
+            updateProyectoFilter();
+            updateDashboard();
+        });
+
+        document.getElementById('proyecto-select').addEventListener('change', updateDashboard);
+        document.getElementById('mes-select').addEventListener('change', updateDashboard);
+        document.getElementById('export-button').addEventListener('click', exportToCSV);
+        
+        // --- EVENT LISTENER AÑADIDO ---
+        document.getElementById('clear-filters-button').addEventListener('click', clearFilters);
+
+        // Initial load
+        updateDashboard();
+    };
+
+    init();
+});
+</script>
+</body>
+</html>
+```
